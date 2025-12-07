@@ -1,0 +1,67 @@
+23:27:11.728 Running build in Washington, D.C., USA (East) – iad1
+23:27:11.728 Build machine configuration: 2 cores, 8 GB
+23:27:11.847 Cloning github.com/Dizzy2Dizzy/ImpactRadarV2 (Branch: main, Commit: 06be402)
+23:27:11.848 Previous build caches not available.
+23:27:30.741 Cloning completed: 18.893s
+23:27:31.336 Running "vercel build"
+23:27:31.749 Vercel CLI 49.0.0
+23:27:32.109 Installing dependencies...
+23:27:35.881 npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+23:27:36.495 npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+23:27:38.127 npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+23:27:38.202 npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+23:27:38.271 npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+23:27:42.641 npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+23:27:49.220 
+23:27:49.221 added 594 packages in 17s
+23:27:49.222 
+23:27:49.222 169 packages are looking for funding
+23:27:49.223   run `npm fund` for details
+23:27:49.303 Detected Next.js version: 14.2.33
+23:27:49.311 Running "npm run build"
+23:27:49.436 
+23:27:49.436 > impactradar-marketing@1.0.0 build
+23:27:49.436 > next build
+23:27:49.437 
+23:27:50.301 Attention: Next.js now collects completely anonymous telemetry regarding usage.
+23:27:50.301 This information is used to shape Next.js' roadmap and prioritize features.
+23:27:50.302 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+23:27:50.302 https://nextjs.org/telemetry
+23:27:50.302 
+23:27:50.358   ▲ Next.js 14.2.33
+23:27:50.359   - Experiments (use with caution):
+23:27:50.359     · instrumentationHook
+23:27:50.360 
+23:27:50.382    Creating an optimized production build ...
+23:27:50.871 [@sentry/nextjs] The Sentry SDK has enabled source map generation for your Next.js app. If you don't want to serve Source Maps to your users, either set the `sourcemaps.deleteSourcemapsAfterUpload` option to true, or manually delete the source maps after the build. In future Sentry SDK versions `sourcemaps.deleteSourcemapsAfterUpload` will default to `true`. If you do not want to generate and upload sourcemaps, set the `sourcemaps.disable` option in `withSentryConfig()`.
+23:28:30.485 <w> [webpack.cache.PackFileCacheStrategy] Serializing big strings (318kiB) impacts deserialization performance (consider using Buffer instead and decode when needed)
+23:28:30.636 Failed to compile.
+23:28:30.636 
+23:28:30.637 ./app/api/account/export-data/route.ts
+23:28:30.637 Module not found: Can't resolve 'drizzle-orm'
+23:28:30.637 
+23:28:30.637 https://nextjs.org/docs/messages/module-not-found
+23:28:30.637 
+23:28:30.637 ./app/api/auth/forgot-password/route.ts
+23:28:30.637 Module not found: Can't resolve 'drizzle-orm'
+23:28:30.637 
+23:28:30.637 https://nextjs.org/docs/messages/module-not-found
+23:28:30.637 
+23:28:30.637 ./app/api/auth/google/callback/route.ts
+23:28:30.638 Module not found: Can't resolve 'drizzle-orm'
+23:28:30.638 
+23:28:30.638 https://nextjs.org/docs/messages/module-not-found
+23:28:30.638 
+23:28:30.638 ./app/api/auth/login/route.ts
+23:28:30.638 Module not found: Can't resolve 'drizzle-orm'
+23:28:30.638 
+23:28:30.638 https://nextjs.org/docs/messages/module-not-found
+23:28:30.638 
+23:28:30.638 ./app/api/auth/me/route.ts
+23:28:30.638 Module not found: Can't resolve 'drizzle-orm'
+23:28:30.639 
+23:28:30.639 https://nextjs.org/docs/messages/module-not-found
+23:28:30.639 
+23:28:30.639 
+23:28:30.639 > Build failed because of webpack errors
+23:28:30.747 Error: Command "npm run build" exited with 1
