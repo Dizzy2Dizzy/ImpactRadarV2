@@ -31,6 +31,10 @@ module.exports = withSentryConfig(
     silent: true,
     org: process.env.SENTRY_ORG,
     project: process.env.SENTRY_PROJECT,
+    // Disable source map upload on Vercel to prevent build timeouts
+    sourcemaps: {
+      disable: true,
+    },
   },
   {
     widenClientFileUpload: true,
