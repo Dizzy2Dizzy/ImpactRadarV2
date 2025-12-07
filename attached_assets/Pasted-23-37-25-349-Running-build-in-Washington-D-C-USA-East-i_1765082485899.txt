@@ -1,0 +1,33 @@
+23:37:25.349 Running build in Washington, D.C., USA (East) – iad1
+23:37:25.350 Build machine configuration: 2 cores, 8 GB
+23:37:25.483 Cloning github.com/Dizzy2Dizzy/ImpactRadarV2 (Branch: main, Commit: 1edcd9d)
+23:37:25.484 Previous build caches not available.
+23:37:45.425 Cloning completed: 19.941s
+23:37:46.180 Running "vercel build"
+23:37:46.712 Vercel CLI 49.0.0
+23:37:47.209 Your application is being built using `next build`. If you need to define a different build step, please create a `vercel-build` script in your `package.json` (e.g. `{ "scripts": { "vercel-build": "npm run prepare && next build" } }`).
+23:37:47.216 Installing dependencies...
+23:37:53.594 npm warn deprecated @esbuild-kit/esm-loader@2.6.5: Merged into tsx: https://tsx.is
+23:37:53.830 npm warn deprecated @esbuild-kit/core-utils@3.3.2: Merged into tsx: https://tsx.is
+23:38:08.503 
+23:38:08.504 added 694 packages in 21s
+23:38:08.504 
+23:38:08.504 181 packages are looking for funding
+23:38:08.504   run `npm fund` for details
+23:38:08.695 Detected Next.js version: 16.0.1
+23:38:08.703 Running "npm run vercel-build"
+23:38:08.831 
+23:38:08.831 > workspace@1.0.0 vercel-build
+23:38:08.831 > next build
+23:38:08.832 
+23:38:09.101 [baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+23:38:12.775 Attention: Next.js now collects completely anonymous telemetry regarding usage.
+23:38:12.776 This information is used to shape Next.js' roadmap and prioritize features.
+23:38:12.776 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+23:38:12.777 https://nextjs.org/telemetry
+23:38:12.777 
+23:38:12.796 
+23:38:12.797 > Build error occurred
+23:38:12.799 Error: > Couldn't find any `pages` or `app` directory. Please create one under the project root
+23:38:12.799     at ignore-listed frames
+23:38:12.820 Error: Command "npm run vercel-build" exited with 1
