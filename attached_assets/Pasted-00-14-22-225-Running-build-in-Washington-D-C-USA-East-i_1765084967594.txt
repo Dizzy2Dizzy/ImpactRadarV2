@@ -1,0 +1,39 @@
+00:14:22.225 Running build in Washington, D.C., USA (East) – iad1
+00:14:22.230 Build machine configuration: 2 cores, 8 GB
+00:14:22.667 Cloning github.com/Dizzy2Dizzy/ImpactRadarV2 (Branch: main, Commit: e835c52)
+00:14:22.679 Previous build caches not available.
+00:14:43.966 Cloning completed: 21.299s
+00:14:44.834 Running "vercel build"
+00:14:45.247 Vercel CLI 49.0.0
+00:14:45.634 Installing dependencies...
+00:15:04.323 npm warn deprecated @esbuild-kit/esm-loader@2.6.5: Merged into tsx: https://tsx.is
+00:15:04.444 npm warn deprecated @esbuild-kit/core-utils@3.3.2: Merged into tsx: https://tsx.is
+00:15:04.946 npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+00:15:05.479 npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+00:15:07.132 npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+00:15:07.262 npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+00:15:07.291 npm warn deprecated glob@8.1.0: Glob versions prior to v9 are no longer supported
+00:15:07.479 npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+00:15:12.385 npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+00:15:19.228 
+00:15:19.229 added 748 packages in 33s
+00:15:19.229 
+00:15:19.230 195 packages are looking for funding
+00:15:19.230   run `npm fund` for details
+00:15:19.324 Detected Next.js version: 14.2.33
+00:15:19.332 Running "npm run build"
+00:15:19.449 
+00:15:19.450 > impactradar-marketing@1.0.0 build
+00:15:19.450 > next build
+00:15:19.450 
+00:15:20.302 Attention: Next.js now collects completely anonymous telemetry regarding usage.
+00:15:20.303 This information is used to shape Next.js' roadmap and prioritize features.
+00:15:20.303 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+00:15:20.304 https://nextjs.org/telemetry
+00:15:20.304 
+00:15:20.356   ▲ Next.js 14.2.33
+00:15:20.357   - Experiments (use with caution):
+00:15:20.357     · instrumentationHook
+00:15:20.357 
+00:15:20.378    Creating an optimized production build ...
+00:15:20.889 [@sentry/nextjs] The Sentry SDK has enabled source map generation for your Next.js app. If you don't want to serve Source Maps to your users, either set the `sourcemaps.deleteSourcemapsAfterUpload` option to true, or manually delete the source maps after the build. In future Sentry SDK versions `sourcemaps.deleteSourcemapsAfterUpload` will default to `true`. If you do not want to generate and upload sourcemaps, set the `sourcemaps.disable` option in `withSentryConfig()`.
