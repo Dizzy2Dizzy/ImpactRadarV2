@@ -33,6 +33,7 @@
     "postgres": "^3.4.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "recharts": "^2.10.0",
     "resend": "^3.0.0",
     "stripe": "^14.0.0",
     "tailwind-merge": "^2.2.0",
