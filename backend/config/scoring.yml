@@ -1,0 +1,76 @@
+# Dynamic Event Scoring Configuration
+# Wave B: Rule-based scoring with context multipliers
+
+# Base scores by event type (0-100)
+base_scores:
+  fda_approval: 90
+  product_launch: 75
+  earnings: 70
+  sec_8k: 65
+  guidance: 70
+  downgrade: 40
+  reg_investigation: 25
+  merger: 80
+  acquisition: 78
+  clinical_trial: 72
+  recall: 35
+  lawsuit: 30
+  partnership: 68
+  ipo: 85
+  bankruptcy: 15
+  sec_10k: 55
+  sec_10q: 50
+  default: 50  # Fallback for unknown types
+
+# Context multiplier weights
+context_weights:
+  # Sector beta contribution (+0 to +10)
+  sector_beta:
+    low: 0      # beta < 0.8
+    medium: 5   # beta 0.8-1.2
+    high: 10    # beta > 1.2
+  
+  # Company volatility (ATR percentile, +0 to +10)
+  volatility:
+    min: 0
+    max: 10
+  
+  # Proximity to earnings (+8 if within ±3 trading days)
+  earnings_proximity: 8
+  
+  # Market regime (SPY 10-day return quantile, -10 to +10)
+  market_regime:
+    min: -10
+    max: 10
+  
+  # After-hours flag (+4)
+  after_hours: 4
+  
+  # Duplicate/repeat event within 7d (-8 penalty)
+  duplicate_penalty: -8
+
+# Source credibility scores (0-100)
+source_credibility:
+  EDGAR: 100
+  SEC: 100
+  FDA: 100
+  official_newsroom: 85
+  press_release: 80
+  third_party: 70
+  social_media: 50
+  unknown: 60
+
+# Confidence calculation
+confidence:
+  # Sample size quantiles for confidence mapping
+  sample_size_quantiles:
+    q10: 3
+    q25: 5
+    q50: 10
+    q75: 20
+    q90: 30
+  
+  # Data completeness scores
+  data_completeness:
+    full: 100
+    partial: 70

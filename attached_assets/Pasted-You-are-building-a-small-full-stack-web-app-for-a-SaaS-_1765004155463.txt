@@ -1,0 +1,78 @@
+You are building a small full-stack web app for a SaaS product called **Impact Radar**, an event-driven swing trading analytics platform.
+
+GOAL
+
+Create:
+1) A **playbook feature** that makes “battle-tested playbooks” a first-class, navigable feature (not just blog posts).
+2) A **content + email list system** for a recurring “Impact Radar Event Briefing” (blog-style posts + email capture).
+3) A **one-page “Impact Radar for Earnings Traders” playbook** page that can be exported to PDF and used as a lead magnet delivered after email signup.
+
+Use:
+- Framework: Next.js (App Router preferred) or React + simple Node/Express.
+- Styling: Tailwind CSS.
+- Storage: In-memory or simple JSON file for subscribers and placeholder content (I’ll hook it to real services later).
+
+
+=====================
+APP STRUCTURE
+=====================
+
+Create a Next.js (or React) app with these main routes:
+
+- `/` – Landing page + email capture + teaser of playbooks and posts.
+- `/briefing` – List of “Impact Radar Event Briefing” posts (blog index).
+- `/briefing/[slug]` – Individual post page.
+- `/playbooks` – Playbook Library index page (first-class feature).
+- `/playbooks/[slug]` – Individual playbook details.
+- `/playbook/earnings-traders` – One-page “Impact Radar for Earnings Traders” playbook suitable for PDF export.
+- `/api/subscribe` – API endpoint to capture email subscribers (POST).
+
+You can hardcode posts and playbooks as JSON arrays or TypeScript objects for now.
+
+
+=====================
+1) PLAYBOOK FEATURE – FIRST-CLASS LIBRARY
+=====================
+
+Create a **Playbook Library** as a central feature:
+
+ROUTE: `/playbooks`
+
+This page should:
+- Show a grid of “playbook cards” with:
+  - Title
+  - Short description
+  - Tags (e.g. “Earnings”, “FDA”, “8-K”, “Long”, “Short”, “5d horizon”)
+  - “View Playbook” button linking to the detail page.
+
+Seed it with at least these 3 playbooks:
+
+1. **“Earnings Beat, Gap < 8%, Uptrend”**
+   - Setup conditions:
+     - EPS/revenue beat.
+     - Opening gap up < ~8%.
+     - Stock above 50-day moving average or clearly in an uptrend.
+   - Entry logic:
+     - Enter on constructive pullback toward intraday support or prior day close.
+   - Stop/target template:
+     - Stop: 1.5–2× ATR below entry or below key support.
+     - Target: 1–3× risk or prior swing high.
+   - Include placeholders for:
+     - Historical stats (win rate, avg R, sample size).
+     - Example charts/events.
+
+2. **“FDA Approval on Small-Cap Biotech”**
+   - Setup conditions:
+     - FDA approval event on small-cap healthcare/biotech.
+     - Impact score high.
+   - Entry logic:
+     - Enter on controlled pullback after initial spike OR next-day continuation if volume remains strong.
+   - Stop/target template:
+     - Volatility-adjusted stop; partial profit-taking on parabolic moves.
+
+3. **“Negative 8-K: Exec Departure in Mid-Cap”**
+   - Setup conditions:
+     - SEC 8-K with Item related to exec departure (e.g. 5.02).
+     - Negative direction classification.
+   - Entry logic:
+     - Short or puts on failed bou

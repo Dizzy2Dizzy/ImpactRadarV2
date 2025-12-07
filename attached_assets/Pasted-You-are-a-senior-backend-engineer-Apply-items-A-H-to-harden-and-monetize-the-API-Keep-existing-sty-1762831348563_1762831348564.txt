@@ -1,0 +1,265 @@
+You are a senior backend engineer. Apply items A–H to harden and monetize the API. Keep existing style and imports. Do not remove current routes. Make focused edits.
+Repo
+/ReleaseRadarBot
+  /backend/api
+  /backend/releaseradar/db/models.py
+  /marketing
+
+A) Fix ApiKey model (quota fields)
+Edit backend/releaseradar/db/models.py:
+In ApiKey add the missing quota columns and cycle tracking.
+
+
+# inside class ApiKey(Base):
+monthly_call_limit = Column(Integer, nullable=False, default=10000)  # Pro default
+calls_used         = Column(Integer, nullable=False, default=0)
+cycle_start        = Column(DateTime, nullable=False, default=datetime.utcnow)
+Ensure User FK and id types match existing schema. Do not change types other than adding the three columns.
+
+
+Add a lightweight migration for SQLite/Postgres:
+
+
+If using SQLAlchemy only: on app start, run ALTER TABLE if columns missing.
+
+ Create backend/api/db_bootstrap.py:
+
+
+from sqlalchemy import inspect, text
+from .db import engine
+
+def ensure_apikey_quota_columns():
+    with engine.begin() as conn:
+        insp = inspect(conn)
+        cols = {c['name'] for c in insp.get_columns('api_keys')}
+        add = []
+        if 'monthly_call_limit' not in cols:
+            add.append("ADD COLUMN monthly_call_limit INTEGER NOT NULL DEFAULT 10000")
+        if 'calls_used' not in cols:
+            add.append("ADD COLUMN calls_used INTEGER NOT NULL DEFAULT 0")
+        if 'cycle_start' not in cols:
+            add.append("ADD COLUMN cycle_start TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP")
+        for stmt in add:
+            conn.execute(text(f"ALTER TABLE api_keys {stmt}"))
+Call it from backend/api/main.py at startup.
+
+B) Monthly counter reset + atomic decrement
+Edit backend/api/utils/api_key.py (or wherever require_api_key lives):
+At the top of require_api_key, reset cycle if ≥30 days.
+
+
+Use an atomic UPDATE to increment calls_used only if below limit.
+
+
+from sqlalchemy import text
+from datetime import datetime, timedelta
+
+RESET_DAYS = 30
+
+def _reset_cycle_if_needed(db, rec):
+    if rec.cycle_start is None or (datetime.utcnow() - rec.cycle_start) >= timedelta(days=RESET_DAYS):
+        rec.calls_used = 0
+        rec.cycle_start = datetime.utcnow()
+        db.commit()
+
+def _consume_one_token(db, key_hash):
+    # portable SQL; adjust to your table name and PK/uniques
+    res = db.execute(text("""
+        UPDATE api_keys
+        SET calls_used = calls_used + 1, last_used_at = CURRENT_TIMESTAMP
+        WHERE key_hash = :h AND calls_used < monthly_call_limit AND status = 'active'
+        """), {"h": key_hash})
+    db.commit()
+    return res.rowcount == 1
+
+def require_api_key(request: Request, x_api_key: str | None = Header(None), db: Session = Depends(get_db), min_plan: str = "pro"):
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Missing x-api-key")
+    rec = db.query(ApiKey).filter(ApiKey.key_hash == _h(x_api_key), ApiKey.status == "active").first()
+    if not rec:
+        raise HTTPException(status_code=403, detail="Invalid or revoked API key")
+    if PLAN_ORDER[rec.plan] < PLAN_ORDER[min_plan]:
+        raise HTTPException(status_code=402, detail="Upgrade required for this endpoint")
+
+    _reset_cycle_if_needed(db, rec)
+    if not _consume_one_token(db, rec.key_hash):
+        raise HTTPException(status_code=429, detail="Monthly API quota exceeded")
+
+    request.state.plan = rec.plan
+    request.state.api_key_hash = rec.key_hash
+    return rec
+Set limits on issuance: Pro=10_000, Team=100_000 (see section E webhook).
+
+C) Add per-plan burst rate limits
+Install: add slowapi==0.1.9 to backend dependencies.
+
+
+Edit backend/api/main.py:
+
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from fastapi import Request
+
+limiter = Limiter(key_func=lambda req: getattr(req.state, "api_key_hash", get_remote_address(req)))
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+def plan_limit(request: Request) -> str:
+    plan = getattr(request.state, "plan", "public")
+    return {
+        "public": "30/minute",
+        "pro":    "600/minute",
+        "team":   "3000/minute",
+    }.get(plan, "60/minute")
+Apply to protected routes (see D).
+
+
+
+D) Gate endpoints + keep a tiny public feed
+Edit these routers: events.py, impact.py, portfolio.py, companies.py.
+Leave /events/public open:
+
+
+limit 50 items
+
+
+cache 60–300s
+
+
+no sensitive fields
+
+
+Add gating + burst limits to everything else:
+
+
+from fastapi import Depends, Request
+from api.utils.api_key import require_api_key
+from api.main import limiter, plan_limit
+
+@router.get("/search")
+@limiter.limit(plan_limit)
+def search_events(..., _key = Depends(lambda: require_api_key(min_plan="pro"))):
+    ...
+Apply identical pattern to detail, impact scoring, portfolio, etc.
+
+E) Wire Stripe → entitlements (limits + key rotation)
+Edit backend/api/routers/billing.py:
+On checkout.session.completed or customer.subscription.updated:
+
+
+Determine plan (pro or team)
+
+
+Revoke existing keys for user
+
+
+Issue new key with monthly_call_limit based on plan:
+
+
+Pro → 10_000
+
+
+Team → 100_000
+
+
+On customer.subscription.deleted or invoice.payment_failed:
+
+
+Set status='revoked'
+
+
+Ensure you email/display key once in the dashboard (section F).
+
+F) Key management endpoints + simple UI
+Backend: add backend/api/routers/keys.py
+@router.get("/keys")
+def list_keys(current_user=Depends(get_current_user)):
+    # return masked keys and metadata, never raw
+    ...
+
+@router.post("/keys/rotate")
+def rotate_key(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    # revoke old, create new with same plan+limit, return RAW once
+    ...
+Mount in main.py: app.include_router(keys.router)
+Frontend (minimal):
+Create marketing/app/account/api-keys/page.tsx:
+Show masked keys (****…abcd)
+
+
+Button “Rotate Key” → calls /keys/rotate, shows raw key in a one-time modal with copy button.
+
+
+Note: “Treat this like a password. It will not be shown again.”
+
+
+
+G) Logging + metrics
+Add middleware in main.py:
+import time, logging
+logger = logging.getLogger("api")
+
+@app.middleware("http")
+async def access_log(request, call_next):
+    t0 = time.time()
+    resp = await call_next(request)
+    ms = int((time.time() - t0) * 1000)
+    keyp = getattr(request.state, "api_key_hash", "")[:8]
+    plan = getattr(request.state, "plan", "public")
+    logger.info(f"{request.method} {request.url.path} {resp.status_code} {ms}ms plan={plan} key={keyp}")
+    return resp
+Optional: expose /metrics later; not required now.
+
+H) CORS lockdown + public feed boundaries
+Edit backend/api/main.py CORS:
+origins = [
+    "https://YOUR-PUBLIC-DOMAIN.tld",  # marketing site
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=False,
+    allow_methods=["GET","POST","OPTIONS"],
+    allow_headers=["content-type","x-api-key"],
+)
+Edit events.py public feed:
+limit 50 records
+
+
+exclude internal fields
+
+
+cache response for 120s (simple in-memory or fastapi-cache if present)
+
+
+
+Acceptance tests (run in Shell)
+# 1) Missing key → 401
+curl -i http://127.0.0.1:8501/events/search
+
+# 2) Invalid key → 403
+curl -i -H "x-api-key: bad" http://127.0.0.1:8501/events/search
+
+# 3) Public feed open
+curl -i http://127.0.0.1:8501/events/public
+
+# 4) Pro key OK, increments quota until 429
+# export KEY=... (from /keys/rotate)
+for i in $(seq 1 5); do curl -s -o /dev/null -w "%{http_code}\n" -H "x-api-key: $KEY" "http://127.0.0.1:8501/events/search?q=earnings&limit=5"; done
+
+# 5) Burst limit enforced (try 100 rapid calls) → some 429
+
+Notes
+Do not log raw API keys. Store only SHA-256 hashes.
+
+
+Quota reset = 30-day rolling window per key (cycle_start + 30 days).
+
+
+Pro/Team limits must be enforced both by monthly quota and rate limiter.
+
+
+Make these changes in small commits. Keep current behavior for everything else.
+

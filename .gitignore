@@ -1,0 +1,39 @@
+# Large files (exceed GitHub 100MB limit)
+impact-radar-complete-1.zip
+impact-radar-complete-2.zip
+impact-radar-complete-3.zip
+attached_assets/Screen Recording 2025-11-29 at 11.35.57 PM_1764477747808.gif
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs
+.next/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test outputs
+playwright-report/
+test-results/

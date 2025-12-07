@@ -1,0 +1,234 @@
+You are a senior backend engineer. Implement API hardening + monetization exactly as follows. Keep current code and conventions.
+Goals
+API keys for Pro/Team. No API for Free.
+
+
+Gate non-public endpoints behind x-api-key.
+
+
+Add per-plan rate limits.
+
+
+Wire Stripe webhooks → entitlements (issue/disable keys).
+
+
+Minimal public feed remains open.
+
+
+Update pricing copy and add API docs page.
+
+
+Repo shape (assumed)
+/backend/api
+  main.py
+  config.py
+  dependencies.py
+  routers/
+    auth.py events.py impact.py portfolio.py pricing.py companies.py
+/marketing
+  app/...  data/plans.ts
+1) Data model: ApiKey
+Create /backend/api/models/apikey.py:
+from datetime import datetime
+from uuid import uuid4
+from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+from .base import Base  # existing Base in your project
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    key_hash = Column(String(128), nullable=False, unique=True, index=True)  # sha256
+    plan = Column(String(16), nullable=False)  # "pro" | "team"
+    status = Column(String(16), default="active")  # "active" | "revoked"
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime)
+In /backend/api/main.py ensure Base.metadata.create_all(bind=engine) runs once on boot (if Alembic not used).
+2) API-key utils + dependency
+Create /backend/api/utils/api_key.py:
+import hashlib, time
+from fastapi import Header, HTTPException, Depends, Request
+from sqlalchemy.orm import Session
+from ..db import get_db
+from ..models.apikey import ApiKey
+
+def _h(s: str) -> str: return hashlib.sha256(s.encode()).hexdigest()
+
+PLAN_ORDER = {"pro": 1, "team": 2}
+
+def require_api_key(
+    request: Request,
+    x_api_key: str | None = Header(None),
+    db: Session = Depends(get_db),
+    min_plan: str = "pro",
+):
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Missing x-api-key")
+    rec = db.query(ApiKey).filter(ApiKey.key_hash == _h(x_api_key), ApiKey.status == "active").first()
+    if not rec:
+        raise HTTPException(status_code=403, detail="Invalid or revoked API key")
+    if PLAN_ORDER[rec.plan] < PLAN_ORDER[min_plan]:
+        raise HTTPException(status_code=402, detail="Upgrade required for this endpoint")
+    rec.last_used_at = __import__("datetime").datetime.utcnow()
+    db.commit()
+    request.state.plan = rec.plan
+    request.state.api_key_hash = rec.key_hash
+    return rec
+3) Rate limiting (per plan)
+Install SlowAPI and its starlette hooks; add to pyproject.toml or requirements:
+slowapi==0.1.9
+Edit /backend/api/main.py:
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from fastapi import Request
+
+limiter = Limiter(key_func=lambda req: getattr(req.state, "api_key_hash", get_remote_address(req)))
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+def plan_limit(request: Request) -> str:
+    plan = getattr(request.state, "plan", "public")
+    return {"public":"30/minute","pro":"600/minute","team":"3000/minute"}.get(plan, "60/minute")
+Example usage in routers (next step) with a dynamic limit.
+4) Gate endpoints
+Leave one small open feed. Protect everything else.
+/backend/api/routers/events.py (example):
+from fastapi import APIRouter, Depends, Request
+from ..utils.api_key import require_api_key
+from ...main import limiter, plan_limit
+
+router = APIRouter(prefix="/events", tags=["events"])
+
+@router.get("/public")  # tiny, cached, 24h, limited fields
+def public_feed(...):
+    ...
+
+@router.get("/search")
+@limiter.limit(plan_limit)
+def search_events(..., _key = Depends(lambda: require_api_key(min_plan="pro"))):
+    ...
+
+@router.get("/{event_id}")
+@limiter.limit(plan_limit)
+def event_detail(event_id: str, _key = Depends(lambda: require_api_key(min_plan="pro"))):
+    ...
+Do the same for impact.py, portfolio.py, companies.py. Keep /auth/* as-is.
+5) Stripe webhook → entitlements
+Add env vars in .env (or Replit Secrets):
+STRIPE_WEBHOOK_SECRET=whsec_***
+STRIPE_SECRET=sk_live_or_test_***
+Create /backend/api/routers/billing.py:
+import stripe, hashlib, secrets
+from fastapi import APIRouter, Request, HTTPException, Depends
+from sqlalchemy.orm import Session
+from ..db import get_db
+from ..models.user import User
+from ..models.apikey import ApiKey
+
+router = APIRouter(prefix="/billing", tags=["billing"])
+
+@router.post("/webhook")
+async def webhook(request: Request, db: Session = Depends(get_db)):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature")
+    try:
+        event = stripe.Webhook.construct_event(
+            payload=payload,
+            sig_header=sig,
+            secret=os.getenv("STRIPE_WEBHOOK_SECRET"),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    t = event["type"]
+    data = event["data"]["object"]
+
+    def issue_key(user: User, plan: str):
+        raw = f"rk_{secrets.token_urlsafe(32)}"
+        h = hashlib.sha256(raw.encode()).hexdigest()
+        db.add(ApiKey(user_id=user.id, key_hash=h, plan=plan, status="active"))
+        db.commit()
+        # TODO: email raw key to user; never store raw string
+        return raw
+
+    if t in ("checkout.session.completed", "customer.subscription.updated"):
+        # map Stripe customer or metadata to user
+        email = (data.get("customer_details") or {}).get("email") or data.get("customer_email")
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            plan = "team" if "team" in (data.get("metadata") or {}).get("plan","") else "pro"
+            # disable old keys
+            db.query(ApiKey).filter(ApiKey.user_id==user.id).update({"status":"revoked"})
+            db.commit()
+            issue_key(user, plan)
+
+    if t in ("customer.subscription.deleted", "invoice.payment_failed"):
+        email = (data.get("customer_details") or {}).get("email")
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            db.query(ApiKey).filter(ApiKey.user_id==user.id).update({"status":"revoked"})
+            db.commit()
+
+    return {"ok": True}
+Mount in main.py:
+from .routers import billing
+app.include_router(billing.router)
+6) Marketing copy and docs
+A) Remove API from Free plan. Edit /marketing/data/plans.ts:
+Free: no “API access”.
+
+
+Pro: “API access (10k calls/mo)”.
+
+
+Team: “API access (100k calls/mo)”.
+
+
+B) Add API docs page /marketing/app/docs/api/page.tsx (simple):
+Auth: add x-api-key.
+
+
+Endpoints: /events/search, /events/{id}, /impact/score, /portfolio/estimate.
+
+
+Limits per plan.
+
+
+Curl and Node examples.
+
+
+7) Security defaults
+In config.py tighten CORS to your marketing URL only.
+
+
+In dependencies.py ensure JWT is required for UI private pages; API uses x-api-key path.
+
+
+8) Tests/smoke
+Add a quick script /backend/api/smoke_api.sh:
+#!/usr/bin/env bash
+set -euo pipefail
+KEY="${RR_TEST_KEY:-missing}"
+curl -sSf -H "x-api-key: $KEY" http://localhost:8501/events/search?q=earnings&limit=3 | head
+Acceptance criteria
+Hitting /events/search without x-api-key → 401 Missing x-api-key.
+
+
+Using a revoked or Free user key → 402 Upgrade required.
+
+
+With Pro key → 200 JSON and limited to ~600/min via SlowAPI.
+
+
+Stripe webhook flips entitlements and creates/disables keys.
+
+
+Free plan page shows no API; Pro/Team show API with quotas.
+
+
+Docs page renders examples with x-api-key.
+
+
+Make small, focused PRs. Keep code idiomatic to existing project.

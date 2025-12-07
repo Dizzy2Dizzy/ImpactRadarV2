@@ -1,0 +1,105 @@
+You are the repo’s senior engineer. Verify Wave B and ship UX fixes. Do not create new frameworks. Keep file paths and names consistent.
+
+SCOPE
+
+Perform 4 verifications and implement 5 quick improvements.
+
+REPO FACTS (assume current defaults)
+	•	Backend FastAPI on :8080; scoring endpoints:
+	•	GET /scores/events/{id}
+	•	GET /scores/?ticker=…&limit=…
+	•	POST /scores/rescore
+	•	GET /metrics, GET /healthz
+	•	Marketing Next.js on :5000; company modal renders score pills via proxy.
+
+⸻
+
+PART A — Automated verification (1-4)
+
+1) API plan gates
+
+Create a short pytest suite backend/tests/test_scores_authz.py that:
+	•	Calls both GET score endpoints with a FREE JWT → expect 402 (custom payment required) and {"detail":"plan_denied"}.
+	•	Calls with PRO JWT → expect 200 with keys: score, confidence, and factors containing sector, volatility, earnings_proximity, market_mood, after_hours, duplicate_penalty.
+
+Use test fixtures to mint valid FREE/PRO JWTs the same way the app does (reuse existing util if present; otherwise add a tiny signer helper in tests only).
+
+2) Caching + ETag correctness
+
+Add backend/tests/test_scores_caching.py:
+	•	GET /scores/events/{id} with PRO → capture ETag and body.
+	•	Repeat with header If-None-Match: <etag> → expect 304 and no body.
+	•	POST /scores/rescore for the same event (use admin JWT) → then GET → expect 200 and different ETag.
+
+3) Metrics exposure
+
+Extend backend/tests/test_metrics.py:
+	•	Assert /metrics contains counters:
+	•	scores_served_total
+	•	scores_denied_free_total
+	•	scores_cache_hits_total
+	•	scores_cache_misses_total
+	•	scores_cache_size
+	•	Make one PRO call and one FREE-denied call, then re-GET /metrics and assert counters increment.
+
+4) UI gates and UX checks
+
+Add a Playwright test marketing/e2e/scores-gates.spec.ts:
+	•	As FREE: open company modal. Confirm score pills render locked state and no network calls to /scores are made (intercept requests and assert zero hits).
+	•	As PRO: score pill shows color class, confidence bar width matches confidence%, tooltip opens on click and keyboard Enter, and closes with Escape. Verify sorting persists via URL query when changing dropdown.
+
+Wire these tests into the existing test command(s). Do not slow the suite; mark these as @e2e and run them in CI only.
+
+⸻
+
+PART B — Gaps & quick improvements
+
+B1) Empty states + skeletons
+	•	In the company modal component (the one that lists events):
+	•	Add a skeleton placeholder for score pill and confidence bar while fetching.
+	•	Add an empty state: “No scored events yet. New events appear here within ~60s of publication.”
+	•	Use Tailwind classes already in project; no new deps.
+
+B2) Tooltip clamping and cap
+	•	Ensure tooltip positions never overflow viewport. Implement a small utility clampToViewport(rect, margin=8) and apply before setting style.
+	•	Limit factor list to top 3 contributors; if more, show “+N more” in tooltip.
+
+B3) Accessibility
+	•	Add role="button" and tabIndex={0} to score pill.
+	•	Add aria-label like:
+aria-label="Impact score {{score}}, confidence {{confidence}} percent"
+	•	Support keyboard:
+	•	Enter/Space toggles tooltip.
+	•	Escape closes tooltip.
+	•	Tooltip uses aria-live="polite" and is reachable via focus trap.
+
+B4) Admin rescore rate limit
+	•	Increase limit from 5/min → 30/min on POST /scores/rescore.
+	•	Keep burst window and admin JWT requirement. Update /metrics to include scores_rescore_rate_limited_total.
+
+B5) CTA copy for FREE users
+	•	Replace the lock pill CTA copy with:
+“Impact scores are a Pro feature. Start a 14-day trial.”
+	•	Link to /pricing?plan=pro (do not hard-code external URLs).
+
+⸻
+
+ACCEPTANCE CRITERIA
+	•	All new tests pass (pytest -q and Playwright e2e).
+	•	FREE plan requests to /scores/* are blocked in UI and not sent (verified by e2e network intercept).
+	•	ETag path returns 304 on match and changes after rescore.
+	•	/metrics exposes and increments the counters listed.
+	•	Score tooltip does not overflow on small viewports; keyboard/ARIA works.
+	•	Rescore endpoint rate limit is 30/min and counter exported.
+	•	Updated CTA text visible to FREE users.
+
+RUN COMMANDS
+	1.	Backend tests:
+
+cd backend && pytest -q
+
+	2.	Frontend e2e:
+
+cd marketing && npx playwright install --with-deps && npx playwright test -g @e2e
+
+If any path or utility is missing, create minimal implementations consistent with current code style. Keep diffs focused.

@@ -1,0 +1,237 @@
+You are a senior full-stack engineer. My repo currently mixes a Next.js + Tailwind marketing site with a Python/Streamlit product app, so the agent keeps running Streamlit and the marketing UI never renders correctly. Restructure the project and wire the run commands exactly as follows.
+
+Goals
+
+Cleanly separate marketing (Next.js 14 + Tailwind + Framer Motion) from backend (Streamlit + Python).
+
+Make the marketing site the primary web UI on port 5000.
+
+Keep the Streamlit app running separately on port 8501 and link to it from the marketing site (“Open the App”).
+
+Ensure Tailwind actually applies (no unstyled page), with production-ready pages.
+
+Target structure (create/move files)
+/marketing
+  /app
+    /api (if needed)
+    /fonts (optional)
+    /[...pages]
+    layout.tsx
+    page.tsx
+    globals.css
+  /components
+  /public
+  package.json
+  tailwind.config.ts
+  postcss.config.js
+  next.config.js
+  tsconfig.json
+
+/backend
+  app.py              # Streamlit entry
+  main.py             # if you have it, keep it here
+  impact_scoring.py
+  scanner_service.py
+  data_manager.py
+  database.py
+  email_service.py
+  sms_service.py
+  payment_service.py
+  populate_stocks.py
+  fix_fda_events.py
+  migrate_database.py
+  normalize_event_types.py
+  seed_database.py
+  /data (companies.json, events.json, watchlist.json, etc.)
+  requirements.txt    # generate from current pyproject if needed
+
+
+Move all existing Next.js/Tailwind code (app/, components/, public/, any Next/Tailwind configs) into /marketing. Move all Python files and data into /backend.
+
+Marketing site configs (overwrite if present)
+
+/marketing/package.json
+
+{
+  "name": "release-radar-marketing",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 5000",
+    "build": "next build",
+    "start": "next start -p 5000"
+  },
+  "dependencies": {
+    "next": "14.2.6",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwindcss": "^3.4.14",
+    "postcss": "^8.4.47",
+    "autoprefixer": "^10.4.20",
+    "framer-motion": "^11.0.0",
+    "lucide-react": "^0.453.0",
+    "clsx": "^2.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/react": "^18.3.8",
+    "@types/node": "^20.12.12"
+  }
+}
+
+
+/marketing/tailwind.config.ts
+
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}"
+  ],
+  theme: { extend: {} },
+  plugins: []
+};
+export default config;
+
+
+/marketing/postcss.config.js
+
+module.exports = { plugins: { tailwindcss: {}, autoprefixer: {} } };
+
+
+/marketing/next.config.js
+
+/** @type {import('next').NextConfig} */
+const nextConfig = { reactStrictMode: true };
+module.exports = nextConfig;
+
+
+/marketing/tsconfig.json
+
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "baseUrl": "."
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}
+
+
+/marketing/app/globals.css
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+
+/marketing/app/layout.tsx
+
+import "./globals.css";
+import { ReactNode } from "react";
+
+export const metadata = { title: "Release Radar", description: "Market-moving events, tracked to the second." };
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  );
+}
+
+
+/marketing/app/page.tsx (hero + CTA linking to Streamlit)
+
+"use client";
+import { motion } from "framer-motion";
+
+export default function Home() {
+  return (
+    <main className="min-h-screen px-6 py-24 mx-auto max-w-6xl">
+      <motion.h1 className="text-4xl md:text-6xl font-bold"
+        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+        Market-moving events, tracked to the second.
+      </motion.h1>
+      <p className="mt-4 text-lg text-neutral-300 max-w-3xl">
+        Release Radar aggregates SEC, FDA, and company announcements into a single dashboard with deterministic impact scoring and actionable alerts.
+      </p>
+      <div className="mt-8 flex gap-3">
+        <a className="rounded-xl px-5 py-3 bg-white text-black font-medium"
+           href="http://localhost:8501" target="_blank" rel="noreferrer">
+          Open the App
+        </a>
+        <a className="rounded-xl px-5 py-3 ring-1 ring-neutral-600" href="/pricing">Pricing</a>
+      </div>
+    </main>
+  );
+}
+
+
+(Optionally add /marketing/app/pricing/page.tsx, /marketing/components/Navbar.tsx, etc.)
+
+Backend (Streamlit) setup
+
+Create /backend/requirements.txt from current deps (streamlit, pandas, requests, sqlalchemy, yfinance, bs4, trafilatura, twilio, stripe, psycopg, etc.). Ensure Streamlit entry is /backend/app.py.
+
+At the top of /backend/app.py, keep:
+
+import streamlit as st
+st.set_page_config(page_title="Release Radar App", layout="wide")
+
+Replit run configuration
+
+Set the main Run command to start the marketing site:
+
+cd marketing && npm install && npm run dev
+
+
+Add a second command (Shell or “Background”):
+
+cd backend && pip install -r requirements.txt && streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+
+
+If Replit uses .replit, create/overwrite:
+
+run = "cd marketing && npm install && npm run dev"
+
+
+And add a Replit “Nix/Shell” script or separate tab to launch the Streamlit command above.
+
+Fix common causes of blank/unstyled pages
+
+Ensure globals.css is imported in app/layout.tsx.
+
+Confirm Tailwind content globs include ./app/** and ./components/**.
+
+Make sure Next runs from /marketing (ports: 5000) and Streamlit from /backend (port: 8501).
+
+Remove any old app.py in root—only /backend/app.py should exist.
+
+Deliverables
+
+Folder tree exactly as specified.
+
+Marketing site builds and serves at http://localhost:5000
+ with Tailwind + Framer Motion styles.
+
+“Open the App” button opens the Streamlit app at http://localhost:8501
+.
+
+Update README with instructions to run both services locally and on Replit.
+
+Do all file moves/edits now and then start both processes. If anything blocks, fix it automatically (e.g., regenerate missing Tailwind configs, tsconfig, or requirements).

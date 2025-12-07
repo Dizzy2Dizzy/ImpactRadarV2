@@ -1,0 +1,194 @@
+You are the senior engineer on Release Radar.
+Implement a domain-specific AI assistant called RadarQuant backed by an internal model called RQ-1 Event Intelligence Engine.
+
+Goal:
+Add a high-power, safe, Release-Radar-only AI to the app that:
+	•	Calculates probabilities (up/down/neutral) based on existing historical stats and scores.
+	•	Performs event delegation: ranks which events matter most for a user’s portfolio or watchlist.
+	•	Assesses company importance around upcoming catalysts.
+	•	Projects profit / P&L impact and percentage increases/decreases/neutral scenarios.
+	•	Only talks about things related to Release Radar (events, companies, scoring, stats, portfolio, alerts, scanners, API).
+
+Do not break existing features or security. Reuse existing Wave A/B/G logic for stats and scoring — no magic guessing.
+
+⸻
+
+1) Backend: AI Orchestrator + Endpoints
+
+Create a new module, e.g. backend/ai/radarquant.py and API router backend/api/routers/ai.py.
+
+1.1. Context builder
+
+Implement a context builder function that gathers structured data for the current user:
+	•	Inputs:
+	•	user_id (from auth/JWT)
+	•	Optional: tickers, company_ids, event_ids, portfolio_focus flags.
+	•	Data sources (use existing models/endpoints):
+	•	Portfolio holdings: tickers, shares, cost basis, current price, exposure metrics.
+	•	Upcoming events for the user’s watchlist + portfolio (next 14–30 days).
+	•	Event scores + factor breakdown (sector, volatility, earnings proximity, market mood, after-hours, duplicate penalty).
+	•	Historical stats (Wave A): avg ± move for 1d/5d/20d, sample size, confidence.
+	•	Context risk (if implemented: context_risk_score, signals).
+	•	Output:
+	•	A compact JSON object with:
+	•	user_portfolio_summary
+	•	watchlist_summary
+	•	upcoming_events (with score, impact stats)
+	•	historical_patterns (per ticker/event type)
+	•	context_risk where available
+
+This builder must NOT fetch arbitrary external data; everything comes from Release Radar DB/APIs.
+
+1.2. System + user prompt construction
+
+In backend/ai/radarquant.py create a function that:
+	•	Builds a system prompt for RadarQuant:
+System message (adjust wording in code):
+You are RadarQuant, the Release Radar AI assistant (model: RQ-1 Event Intelligence Engine).
+You operate only within the Release Radar domain: company events, scores, historical stats, alerts, portfolios, scanners, and API usage.
+Your tasks:
+	•	Estimate probabilities that a stock will move up, down, or stay roughly neutral around specific events, using Release Radar’s historical stats and event scoring.
+	•	Identify which upcoming events are most important for a given portfolio or watchlist.
+	•	Explain company and event importance clearly and quantitatively (sample sizes, average moves, confidence).
+	•	Project hypothetical P&L and percentage outcomes for the user’s positions under different event scenarios.
+Rules:
+	•	Base all probabilities and projections only on the data provided to you (historical stats, scores, context risk).
+	•	Be explicit that all probabilities and P&L projections are hypothetical, not guarantees, and not financial advice.
+	•	Never claim to know future prices or guarantee outcomes.
+	•	If asked about anything outside Release Radar (politics, random life advice, other products), politely refuse and steer back to events, stocks, and analytics inside Release Radar.
+	•	Prefer numbers grounded in the provided stats: e.g., “Historically, similar events moved ±X% on average with N samples.”
+	•	When you don’t have enough data (low sample size, missing stats), say so and avoid making up precise probabilities.
+	•	Builds a user prompt that includes:
+	•	The user’s natural-language question.
+	•	The structured context JSON from the context builder.
+	•	Clear instructions to the model: “Use this context and Release Radar data only.”
+
+1.3. LLM call wrapper
+
+Implement a helper to call an LLM provider (e.g. OpenAI) from the backend:
+	•	Read OPENAI_API_KEY (or equivalent) from env.
+	•	Use Chat Completions API with:
+	•	system message = RadarQuant instructions.
+	•	user message = question + JSON context.
+	•	Add:
+	•	Reasonable max tokens.
+	•	Temperature tuned low-to-medium for consistency.
+	•	PII safety:
+	•	Do not send user emails or API keys; use only IDs/tickers/aggregates.
+
+1.4. AI endpoints
+
+Add a new router backend/api/routers/ai.py with endpoints:
+	1.	POST /ai/analyze
+	•	Auth required.
+	•	Request body:
+	•	question: str
+	•	Optional: tickers: list[str]
+	•	Optional: event_ids: list[int]
+	•	Optional: portfolio_focus: bool
+	•	Flow:
+	•	Build context (portfolio, events, stats) based on user_id + request.
+	•	Call RadarQuant LLM wrapper.
+	•	Return JSON:
+	•	answer: str
+	•	used_tickers, used_events, sample_sizes, etc.
+	2.	POST /ai/chat (optional, for multi-turn chat)
+	•	Supports:
+	•	history: list[{role, content}]
+	•	question: str
+	•	Maintains the same domain restriction; always re-inject a fresh context snapshot.
+	3.	Plan gating:
+	•	Free:
+	•	X requests per day (e.g., 5) and limited scope (e.g. no full-portfolio deep dives).
+	•	Pro / Team:
+	•	Higher limits and full portfolio + event analysis.
+	•	Enforce quotas using existing plan/rate limiting system and return 402/429 with proper error codes.
+	4.	Logging:
+	•	Log AI usage (user_id, timestamp, question length, context size) but do NOT log full prompts or responses verbatim to avoid PII accumulation.
+
+Add backend tests that:
+	•	Call /ai/analyze with a fake portfolio + events context and assert:
+	•	It succeeds for Pro user.
+	•	It returns structured JSON with answer and metadata.
+	•	Check Free user hitting daily limit gets 402/429.
+
+⸻
+
+2) Frontend: RadarQuant UI
+
+In the Next.js app:
+
+2.1. New “RadarQuant AI” panel
+	•	Add a new Dashboard tab or side panel called “RadarQuant AI” with branding:
+	•	Header: RadarQuant
+	•	Subtitle: Release Radar AI – RQ-1 Event Intelligence Engine
+	•	Components:
+	•	Chat-style interface:
+	•	Textarea/input for the user’s question.
+	•	“Send” button.
+	•	Message list with:
+	•	User messages (right-aligned).
+	•	RadarQuant responses (left-aligned, with “RadarQuant” name and model label).
+	•	Preset suggestion buttons:
+	•	“Analyze my portfolio for the next 14 days.”
+	•	“What are the most important events this week for my holdings?”
+	•	“Estimate event impact probabilities for [TICKER].”
+	•	“Explain why [COMPANY] is high-risk or low-risk in my portfolio.”
+	•	Call POST /ai/analyze on submit:
+	•	Include current portfolio/watchlist by default (no need for user to specify unless they choose).
+	•	While loading, show a spinner and disable the send button.
+
+2.2. Safety / disclosure
+	•	At the top or bottom of the RadarQuant panel, show a small disclaimer:
+“RadarQuant uses historical data and Release Radar scores to generate hypothetical probabilities and P&L scenarios. This is not financial advice and does not guarantee future performance.”
+	•	If user asks something obviously out-of-scope (e.g., “Give me life advice” or “Write a poem”), RadarQuant should respond with:
+	•	A polite refusal and redirect to Release Radar topics (enforced via system prompt, but make sure UI handles it gracefully).
+
+2.3. Plan-based gating in UI
+	•	Free plan:
+	•	Show RadarQuant panel but:
+	•	Limit number of questions/day (show a count and lock after limit).
+	•	Show an “Upgrade to Pro to unlock deeper analysis” CTA when limit reached.
+	•	Pro/Team:
+	•	Full access, with a soft cap indicator if you enforce higher limits.
+
+Front-end tests:
+	•	Ensure Free users see limits & upgrade CTA.
+	•	Pro users can send multiple queries and see answers.
+	•	RadarQuant panel handles loading/error states and displays backend errors (402, 429, 500) with clear messages.
+
+⸻
+
+3) Analytics & Logging
+	•	Add metrics to /metrics:
+	•	ai_requests_total{plan="free|pro|team"}
+	•	ai_requests_blocked_quota_total
+	•	ai_latency_seconds (histogram)
+	•	Add basic anonymized logging of:
+	•	Approx question length, context size, and response time (no raw text).
+
+⸻
+
+4) Documentation & Acceptance
+	1.	Docs:
+	•	Add a new section in replit.md or a dedicated RADARQUANT.md explaining:
+	•	What RadarQuant is.
+	•	How it uses stats, scores, and portfolios.
+	•	Limits and disclaimers (not investment advice).
+	•	Update EVALUATION_REPORT.md with a “Wave K – RadarQuant AI” section summarizing:
+	•	Endpoints added.
+	•	Plan limits.
+	•	Security and privacy precautions.
+	2.	Acceptance criteria:
+	•	Authenticated Pro user:
+	•	Can open RadarQuant tab, ask a question, and receive a detailed answer that references their portfolio and upcoming events.
+	•	Gets probabilities and P&L projections clearly labeled as hypothetical, with references to historical stats (sample sizes, average moves).
+	•	Free user:
+	•	Sees RadarQuant, can try it a limited number of times, then gets upgrade messaging.
+	•	RadarQuant refuses out-of-domain questions and stays strictly in Release Radar’s scope.
+	•	No secrets or emails are sent to the LLM provider.
+	•	New tests pass; existing tests remain green.
+
+⸻
+
+Focus on high-quality orchestration and safe domain restriction, not just wiring a generic chatbot. RadarQuant must feel like a specific, serious Release Radar feature, not a general-purpose assistant.

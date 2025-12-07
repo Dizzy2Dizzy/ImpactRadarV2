@@ -1,0 +1,48 @@
+You are a senior full-stack engineer. Finish Wave B by wiring the scoring API into the UI and tightening auth/ops.
+
+GOALS
+1) Surface event scores in the Companies modal and list pages.
+2) Lock down API auth and pricing gates.
+3) Add observability and a small test suite.
+
+TASKS
+
+BACKEND (FastAPI, port 8080)
+- Ensure routes:
+  GET /scores/events/{id}
+  GET /scores/?ticker&event_type&min_score&limit<=100
+  POST /scores/rescore  -> admin-only (check is_admin), rate-limit 5/min, log requester.
+- Add response fields: {score:int, confidence:float, factors:{...}, computed_at}.
+- Enforce UNIQUE(event_id) on event_scores; return 409 on conflict.
+- Add /healthz and simple /metrics counters (scored_events_total, rescore_errors_total).
+- Cache GETs for 60s (key = path+query). Add ETag header.
+
+PRICING / AUTH
+- Free plan: hide scores in API (return 402 with {error:"UPGRADE_REQUIRED"}) and in UI.
+- Pro/Team: full access.
+- Add middleware that injects plan into request state.
+
+FRONTEND (Next.js, marketing/app)
+- In components/CompanyEvents.tsx:
+  - Fetch scores for visible events. Show right-aligned pill “Score 87” with color:
+    0–39 gray, 40–59 yellow, 60–79 orange, 80–100 red.
+  - Tooltip: list top 3 contributing factors with +/- deltas.
+  - Small 2px confidence bar under pill (width = confidence*100%).
+  - Add column header actions: Sort by {Score, Impact, Date}.
+- If user plan = Free, render lock icon + “Upgrade to see scores” CTA linking to /pricing?feature=scores.
+
+TESTS
+- Unit: factor weight math, earnings proximity bug guard, duplicate penalty.
+- Integration: GET /scores/?ticker returns stable order; POST /scores/rescore idempotent.
+- Add CI job “wave_b_scores” to run tests.
+
+OPS
+- Nightly backfill job: only score rows where score IS NULL unless --force.
+- Logs: include event_id, ticker, base_score, factor_adjustments, final_score.
+- Update SCORING.md with factor formulas and the color scale.
+
+ACCEPTANCE
+- Companies modal shows colored score + confidence bar + tooltip.
+- Sorting works and persists via querystring.
+- Free plan sees CTA instead of scores.
+- All tests pass; /healthz 200; /metrics expose counters.

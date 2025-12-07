@@ -1,0 +1,40 @@
+You are the repo’s senior engineer. Add manual scan controls with safe queuing.
+
+Goals
+	•	Add Rescan Company (run all scanners for one ticker).
+	•	Add Rescan Scanner (run one scanner across its scope).
+	•	Respect existing schedules, concurrency caps, and rate limits.
+	•	Show runs and results in the Scanner Status UI.
+
+Backend (FastAPI, :8080)
+	•	Add job queue table scan_jobs:
+	•	id, created_by, scope ("company"|"scanner"), ticker NULLABLE, scanner_key NULLABLE, status ("queued"|"running"|"success"|"error"), started_at, finished_at, items_found int, error text.
+	•	Index on status, created_at.
+	•	Add endpoints (auth required; admins unlimited, users limited):
+	•	POST /scanners/rescan/company {ticker} → enqueue job; return job id.
+	•	POST /scanners/rescan/scanner {scanner_key} → enqueue job; return job id.
+	•	GET /scanners/jobs?status=&limit= → list with pagination.
+	•	GET /scanners/jobs/{id} → details.
+	•	Worker:
+	•	New loop backend/jobs/scan_worker.py. Poll scan_jobs for status='queued', set to running, execute with existing scanner functions.
+	•	If scope="company": run all scanners that support a ticker input.
+	•	If scope="scanner": run selected scanner (global or per-ticker depending on scanner design). Use bounded concurrency (reuse existing pool). Respect backoff and per-source limits.
+	•	Record items_found, error, timestamps, and set final status.
+	•	Rate limits: per-user max 1 company job / 60s and 1 scanner job / 120s. Enforce in creation endpoint.
+	•	Metrics:
+	•	Prometheus counters: manual_scan_jobs_total{scope=…}, manual_scan_jobs_error_total, manual_scan_runtime_seconds.
+	•	Security:
+	•	Validate ticker exists in companies.
+	•	Validate scanner_key exists in registry.
+	•	Log requester id and scope.
+
+Frontend (Next.js)
+	•	Company page: add button “Rescan Company” (disabled while job active; shows spinner).
+	•	Scanner Status page: add dropdown of scanners + “Rescan Scanner” button.
+	•	Jobs table: show last 25 jobs with status pill, items found, duration, created by. Poll every 5s.
+	•	Toast on enqueue and on completion/error.
+
+Acceptance
+	•	Enqueue works; jobs execute; results visible; metrics increase.
+	•	Per-user rate limits enforced with clear error messages.
+	•	Existing scheduled scanners unaffected.

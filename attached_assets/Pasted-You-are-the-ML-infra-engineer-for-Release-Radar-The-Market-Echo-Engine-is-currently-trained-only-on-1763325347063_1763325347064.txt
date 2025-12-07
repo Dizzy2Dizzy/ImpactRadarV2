@@ -1,0 +1,152 @@
+You are the ML/infra engineer for Release Radar. The Market Echo Engine is currently trained only on SEC 8-K events. I want you to expand the learning system so it is trained on a MUCH broader set of real events: earnings, 10-Q, 10-K, FDA approvals, M&A, and other company releases—without ever using synthetic/template data.
+
+GOAL
+
+Train, validate, and deploy ML models that learn from multiple event types, not just 8-Ks, while:
+	•	Using real price data only (no mock events, no fake prices).
+	•	Using SPY-normalized abnormal returns.
+	•	Preserving the existing guardrail blending with deterministic impact scores.
+	•	Being explicit in the UI and backtesting which event types are actually trained.
+
+⸻
+
+1. Inspect existing data + schema
+	1.	Inspect the events tables (e.g. events, event_stats, event_outcomes, price_history) and list all distinct event_type values and their counts.
+	2.	Group them into logical families such as:
+	•	sec_8k
+	•	sec_10q
+	•	sec_10k
+	•	earnings_call / earnings_release
+	•	fda_approval, fda_complete_response, etc.
+	•	mna / acquisition / merger
+	•	company_press_release (material vs non-material if available)
+	3.	Document these groups in a small internal file (e.g. backend/releaseradar/event_type_families.py), so the grouping is centralized and reusable.
+
+⸻
+
+2. Extend labeling / price outcome pipeline
+
+The current pipeline labeled only SEC 8-Ks. Generalize it:
+	1.	For all real events (no test/simulated ones), and for each event_type family, fetch price history using yfinance:
+	•	Ticker’s adjusted close for:
+	•	T (event date)
+	•	T+1, T+5, T+20 trading days
+	•	SPY (or similar broad ETF) on the same dates
+	2.	Compute returns and abnormal returns:
+	•	Raw return at horizon h:
+R_{i,h} = \frac{P_{i,t+h} - P_{i,t}}{P_{i,t}}
+	•	Benchmark return (SPY):
+R^{\text{SPY}}_{h} = \frac{P^{\text{SPY}}_{t+h} - P^{\text{SPY}}_{t}}{P^{\text{SPY}}_{t}}
+	•	Abnormal return:
+AR_{i,h} = R_{i,h} - R^{\text{SPY}}_{h}
+	3.	Store for each (event_id, horizon) in event_outcomes (or equivalent):
+	•	ar_1d, ar_5d, ar_20d
+	•	label_direction_h ∈ {−1, 0, +1} based on sign of AR
+	•	label_magnitude_h = |AR|
+	4.	Make sure:
+	•	Stock splits, missing data, and suspended tickers are handled cleanly (skip those events with a reason logged).
+	•	No synthetic/template events are included.
+
+⸻
+
+3. Model training strategy by event type
+
+Design models that are aware of event type and data volume.
+	1.	For each horizon h \in \{1,5,20\}, and each event_type family:
+	•	Compute sample size N_{event\_type,h}.
+	•	If N_{event\_type,h} \ge 150: train a dedicated model for that event type and horizon.
+	•	If 50 \le N_{event\_type,h} < 150: optionally train but mark as “limited data / experimental”.
+	•	If N_{event\_type,h} < 50: do not train; use deterministic scores only for that event type.
+	2.	Use XGBoost (or current chosen algorithm) with strong regularization:
+	•	Reasonable defaults:
+	•	max_depth small (e.g. 3–5)
+	•	learning_rate small (e.g. 0.05–0.1)
+	•	subsample and colsample_bytree < 1.0
+	•	min_child_weight tuned to avoid overfitting
+	•	Apply early stopping using a validation split.
+	3.	Features:
+	•	Existing engineered features (technical, event metadata, volatility).
+	•	Include event_type_family as a categorical or one-hot feature in models that are shared across families (if you choose to train global models in addition to per-family ones).
+	4.	Register every trained model in model_registry with:
+	•	event_type_family
+	•	horizon (1/5/20)
+	•	training sample size
+	•	timestamp
+	•	validation metrics (direction accuracy, magnitude error, etc.)
+
+⸻
+
+4. Scoring + blending logic
+
+Keep the existing guardrail system, but extend it to be event-type aware.
+	1.	For each incoming event + horizon:
+	•	Get the deterministic base impact score base_score_h.
+	•	Determine which ML model (if any) applies:
+	•	If there is a trained model for that event_type family and horizon, use it.
+	•	Otherwise, skip ML and return base_score_h only.
+	2.	Let the model output:
+	•	ml_direction_h ∈ {−1, 0, +1}
+	•	ml_magnitude_h (expected abnormal % move)
+	•	ml_confidence_h ∈ [0,1]
+	3.	Convert the ML prediction to an adjustment on the base score, keeping existing guardrails:
+	•	Max adjustment ±20 points relative to base
+	•	If confidence < 0.6, either:
+	•	shrink adjustment proportionally, or
+	•	fall back to deterministic score only.
+	4.	Store:
+	•	ai_adjusted_score_h
+	•	ai_confidence_h
+	•	applied_model_id (or “none”)
+
+so that backtesting and the UI can show which model actually influenced the score.
+
+⸻
+
+5. Backtesting + reporting by event type
+
+Update the existing backtesting dashboard and metrics:
+	1.	For each horizon (1d, 5d, 20d) and event_type family, compute:
+	•	Directional accuracy (all predictions)
+	•	High-confidence accuracy (e.g. confidence ≥ 0.7)
+	•	Average magnitude error (|actual − predicted|)
+	•	Number of labeled events used
+	2.	Surface this in the backtesting UI:
+	•	A table or chart that clearly shows which event types are well-trained vs under-trained.
+	•	For event types where no ML model is used, show “Deterministic only – ML not yet trained”.
+	3.	Keep the SPY-normalized explanation visible in the “About Backtesting” section so users understand we’re measuring abnormal returns.
+
+⸻
+
+6. Safety & presentation rules
+	1.	DO NOT add trading signals (no “buy/sell”, “long/short”, or P&L projections).
+Only produce impact scores, directions, and confidence.
+	2.	All models must continue to respect guardrails (±20 points) and fallback behavior.
+	3.	In any user-facing copy, never claim “profitability”. Only describe:
+	•	“directional accuracy vs realized price moves”
+	•	“average error in predicted vs actual abnormal returns”.
+	4.	Update docs (e.g. docs/ folder) to describe:
+	•	Which event types are currently trained,
+	•	Minimum sample size thresholds,
+	•	How SPY-normalized abnormal returns are used,
+	•	The guardrail system.
+
+⸻
+
+7. Deliverables
+
+When you’re done, provide:
+	1.	A short model coverage report (markdown) summarizing:
+	•	Event types, horizons, and sample sizes
+	•	Direction accuracy / magnitude error per event_type & horizon
+	•	Which models are considered “production” vs “experimental”.
+	2.	Updated code and config for:
+	•	Labeling pipeline
+	•	Training scripts
+	•	Scoring/blending services
+	•	Backtesting dashboards
+	3.	Confirmation that:
+	•	1-day and 5-day models run for multiple event types,
+	•	20-day models are only enabled where sample size is sufficient,
+	•	Deterministic fallback is preserved everywhere.
+
+Focus on real multi-event training, robust evaluation, and safe integration with the existing scoring system.

@@ -1,0 +1,93 @@
+You are a senior backend engineer. Finish Wave A completely. Do not begin scoring, alerts, portfolio, or WebSockets yet.
+
+Goal
+
+Finalize the backtesting system with correctness, tests, UI indicators, and documentation.
+The core refactor is already done — now complete verification + polish.
+
+⸻
+
+Tasks to Perform
+
+1) Fix Integration Tests
+	•	Open: backend/tests/integration/test_event_stats.py
+	•	Update the test price fixtures to guarantee ≥50 trading days of price history.
+	•	Re-generate fixture data if needed (extend date range).
+	•	Ensure tests cover:
+
+Scenario	Expected Result
+Full price coverage	action=update, stats created
+Missing future dates for recent events	recent events ignored, stats computed from older events
+No valid events	action=delete and EventStats removed
+Re-running recompute	no change (idempotent)
+
+	•	Run the full suite and ensure all tests pass.
+
+⸻
+
+2) Add UI Indicator for Stats Availability
+In the Company Events modal (Next.js):
+	•	If sample_size > 0 → show:
+
+<div class="text-emerald-400 text-sm">✅ Historical stats available ({{sample_size}} events)</div>
+
+	•	If sample_size == 0 → show:
+
+<div class="text-zinc-400 text-sm">⚠️ Insufficient price data for historical analysis yet</div>
+
+No redesign. No charts added yet.
+
+⸻
+
+3) Document Invariants
+Create new file: backend/INVARIANTS.md
+
+Add the following:
+
+# Event Backtesting Invariants
+
+1. compute_stats_for_ticker_event_type() never writes to the database.
+2. It returns one of:
+   {"action": "update", "payload": {...}}
+   {"action": "delete"}
+3. Missing price history for required windows → delete EventStats for that (ticker, event_type).
+4. Partial data from recent events is ignored (Option B: lenient).
+5. recompute_all_stats() must be idempotent.
+
+Add same notes as comments at the top of:
+	•	compute_stats_for_ticker_event_type()
+	•	recompute_all_stats()
+
+⸻
+
+4) Confirm Final Behavior
+After completing tests + UI + docs:
+
+Run:
+
+cd backend
+alembic upgrade head
+pytest -q
+make jobs.recompute
+
+Validate:
+	•	No failing tests
+	•	Recompute job produces stable, repeatable results
+	•	UI displays correct availability messages
+
+⸻
+
+DO NOT DO
+	•	Do not begin dynamic scoring (Wave B)
+	•	Do not modify pricing or plans
+	•	Do not adjust database schema beyond test fixture needs
+	•	Do not touch authentication or API quotas
+
+⸻
+
+Acceptance Criteria
+	•	All integration tests pass.
+	•	POST /analytics/recompute is idempotent.
+	•	UI clearly indicates when stats are available vs. pending.
+	•	INVARIANTS.md exists and reflects the final contract.
+

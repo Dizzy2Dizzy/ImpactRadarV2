@@ -1,0 +1,224 @@
+You are a senior ML + full-stack engineer working on my project. The engine is already implemented as a strong prototype, with 355+ labeled SEC 8-K events and XGBoost models for 1d/5d/20d horizons. I want you to take it toward “statistically battle-tested” by implementing the concrete next steps that were suggested in the latest audit:
+
+## 0. First, inspect the existing code
+
+1. Find everything related to:
+
+   * `Market Echo Engine` or `Echo Engine`
+   * `backtesting`, `event_outcomes`, `model_registry`, `model_features`
+   * ML model training (XGBoost) and inference endpoints (`/ml-scores/*`)
+   * The Backtesting & Accuracy UI in the dashboard
+
+2. Briefly map the current structure in a short MARKDOWN note (`docs/ML_ARCH_NOTES.md`) so you understand:
+
+   * Where the labeling pipeline lives
+   * How price history is stored (tables and columns)
+   * Where backtesting metrics are computed
+   * Where the Market Echo cards/sections are rendered in the UI
+
+Do NOT delete or rewrite the whole system. Build on the existing implementation.
+
+---
+
+## 1. Strengthen the learning pipeline for 1,000–1,500+ labeled events
+
+Goal: Let the pipeline run safely for weeks and scale to 1–1.5k labeled events across more event families.
+
+1. Make sure the nightly/periodic labeling job:
+
+   * Can be run idempotently (re-running should not double-count outcomes).
+   * Correctly filters events that are at least 21 trading days old before attempting 20-day labels.
+   * Logs progress per run (how many events attempted, how many newly labeled, by family and horizon).
+
+2. Add a **configurable scheduler** or CLI entry point so I can trigger it manually:
+
+   * Example commands (adapt to this codebase):
+
+     * `python -m backend.tools.label_events --since 2023-01-01`
+     * `python -m backend.tools.label_events --dry-run`
+   * Support options:
+
+     * `--families sec_8k,earnings,fda`
+     * `--horizons 1d,5d,20d`
+     * `--limit N` (max events per run for safety)
+
+3. Make sure the labeling job:
+
+   * Computes **SPY-normalized abnormal returns** exactly as in the current engine:
+
+     * `abnormal_return_t = stock_return_t − spy_return_t` for each horizon.
+   * Stores one row per `(event_id, horizon)` with:
+
+     * `outcome_return_1d`, `outcome_return_5d`, `outcome_return_20d`
+     * `label_direction` (+1, 0, −1) and `label_magnitude` (absolute abnormal return)
+     * `family`, `ticker`, `event_type`, `trained_version` (for provenance)
+
+4. Verify that the labeling pipeline handles:
+
+   * Missing or delisted tickers gracefully (log + skip, no crash).
+   * Stock splits / dividends to the extent yfinance handles them.
+   * Non-trading days around events (use closest next trading day).
+
+Add/update small unit tests where needed to prove this is working.
+
+---
+
+## 2. Build a compact **internal ML monitoring dashboard**
+
+Create a new internal view/component (does not need to be public marketing) that tracks, **for each horizon (1d, 5d, 20d)**:
+
+1. **Labeled events**
+
+   * Total labeled events overall.
+   * Labeled events per family (sec_8k, earnings, fda, etc.).
+   * Number of companies represented per family (to avoid one-ticker bias).
+
+2. **Out-of-sample accuracy**
+   For each active model and horizon:
+
+   * Direction accuracy on a held-out validation set.
+   * High-confidence accuracy (e.g., predictions where |score_adjustment| ≥ threshold).
+   * Number of samples used to compute each metric.
+
+3. **Magnitude & calibration**
+
+   * Mean Absolute Error (MAE) between predicted impact (probabilities or adjusted score mapped to % move) and realized abnormal returns.
+   * Simple **calibration check**: for bucketed predictions (e.g., 50–60, 60–70, 70–80 impact), compare average predicted impact vs average realized move.
+   * Show whether “70% confidence” predictions are actually correct around 70% of the time.
+
+4. **Per-family model status**
+
+   * For each event family and horizon, show:
+
+     * Data volume used for training (events, companies).
+     * Current model type (family-specific / global / deterministic-only).
+     * A simple health label: `Prototype`, `Production Ready`, or `Insufficient Data`.
+
+Implementation details:
+
+* Back end:
+
+  * Add a single API endpoint like `GET /ml/monitoring` that returns all metrics pre-aggregated.
+  * Do aggregation in SQL / Python, not in the front end.
+  * Cache the results for a short period (e.g., 5–15 minutes).
+
+* Front end:
+
+  * Add a section **above** the existing Backtesting tables, titled “ML Monitoring”.
+  * Use clean cards / tables (same style as the existing Backtesting / Coverage section).
+  * Make it very clear this is **internal diagnostic** – not user-facing trading advice.
+
+---
+
+## 3. Improve **UI labeling** of predictions everywhere
+
+Wherever an event prediction is shown (event cards, detail view, RadarQuant AI explanations, backtesting views), clearly separate and label:
+
+1. **Base deterministic score**
+
+   * The “rules-based” impact score (0–100) *before* any ML adjustments.
+   * Label it explicitly as: `"Base score (deterministic rules)"`.
+
+2. **ML-adjusted score**
+
+   * The score after the Market Echo Engine nudges it (within ±20 points).
+   * Label as: `"AI-adjusted score (Market Echo)"`.
+   * When no ML model is available or confidence is low, show a clear indicator:
+
+     * e.g., `"AI model not applied (insufficient data)"`.
+
+3. **Horizon tag**
+
+   * Show which horizon the AI prediction applies to:
+
+     * Badges like `1-Day`, `5-Day`, `20-Day`.
+   * If the UI uses a combined view, show the default horizon and allow hover/tooltip for others.
+
+4. **Model provenance**
+
+   * For internal / advanced users (e.g., in event detail or backtesting view), include:
+
+     * `Model family: SEC 8-K / Earnings / Global`
+     * `Model version: v1.0.2`
+   * This can be a tooltip or expandable “Model details” section, but the information must be surfaced from the API.
+
+Back-end changes:
+
+* Ensure every prediction response contains:
+
+  * `base_score`
+  * `ml_score_adjusted`
+  * `horizons` or separate entries per horizon
+  * `model_family` (e.g., "sec_8k", "global")
+  * `model_version`
+  * `ml_applied` (boolean) and `confidence_level` or `sample_size_bucket`.
+
+Front-end changes:
+
+* Refactor any places where the UI currently just shows “Impact: 65%” to instead display the structured view above.
+* Avoid any wording that looks like direct trading signals; keep language in line with “impact estimate” and “prototype”.
+
+---
+
+## 4. Treat the system as a **strong prototype**, not a statistically battle-tested model
+
+1. Add explicit copy in the UI (e.g., in the Market Echo panel and an “About Backtesting” tooltip) explaining:
+
+   * The system is an experimental, self-learning prototype.
+   * Current training data: ~355 SEC 8-K events and growing; other families in early stages.
+   * Metrics are **research tools**, not guarantees or advice.
+
+2. In code / docs:
+
+   * Update `docs/V1_SCOPE.md` and `HARDENING_REPORT.md` to reflect:
+
+     * Current labeled sample sizes per family.
+     * That the ML engine is in “Prototype / Research” status even if it shows >60% accuracy.
+   * Add a small `docs/ML_LIMITATIONS.md` explaining:
+
+     * Limited sample sizes.
+     * Regime shift risk.
+     * Non-stationarity of markets.
+
+3. Confirm that **all** external-facing pages and API responses keep the existing guardrails:
+
+   * ±20 point maximum ML adjustment.
+   * No “buy/sell/hold” language anywhere.
+   * Clear disclaimers that this is **not investment advice**.
+
+---
+
+## 5. Verification & Testing
+
+Before you say you are done:
+
+1. Add/extend tests:
+
+   * Unit tests for:
+
+     * Labeling logic (abnormal return calculation, 1d/5d/20d windows).
+     * Aggregation functions feeding the new monitoring endpoint.
+   * At least one integration test that:
+
+     * Creates a few synthetic events + prices.
+     * Runs the labeling + training.
+     * Calls the prediction endpoint and verifies:
+
+       * base vs ml-adjusted scores are present.
+       * provenance fields are filled in.
+
+2. Run the existing golden-path E2E tests and ensure nothing is broken.
+
+3. Do a short manual QA checklist:
+
+   * Backtesting page loads correctly with the new monitoring section.
+   * Event detail pages show base vs AI-adjusted scores, horizon, and model family where appropriate.
+   * No broken links or console errors are introduced.
+
+4. Finally, write a concise summary in `docs/ML_MONITORING_RELEASE_NOTES.md`:
+
+   * What you implemented.
+   * New endpoints and components.
+   * How to run the labeling job & where to view monitoring.
+
+Do all of this directly in this repo. Keep things incremental and **do not** remove any existing safety checks or disclaimers.

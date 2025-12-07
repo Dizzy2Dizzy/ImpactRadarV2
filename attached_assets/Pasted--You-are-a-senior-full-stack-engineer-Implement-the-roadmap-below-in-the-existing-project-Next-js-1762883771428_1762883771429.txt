@@ -1,0 +1,183 @@
+
+
+You are a senior full-stack engineer. Implement the roadmap below in the existing project (Next.js app at marketing/ on :5000, FastAPI at backend/api/main.py on :8080). Keep current styling. Add only what’s listed, with clean code, tests, and feature flags.
+
+0) Ground rules
+	•	Do not break current pages or pricing.
+	•	Keep API behind auth; Free plan has no API.
+	•	Use Postgres via existing connection. Migrate with Alembic.
+	•	Use FastAPI + SQLAlchemy; queue heavy jobs via background tasks.
+	•	Frontend: Next.js App Router, Tailwind, shadcn/ui, Recharts. State via Zustand.
+	•	Realtime: FastAPI WebSocket at /ws/events, client connects from dashboard.
+	•	All new code covered by unit tests + a smoke E2E.
+
+⸻
+
+1) Historical Event Backtesting (A/B/C)
+
+Goal: show expected move after events by ticker and event type (1D, 5D, 20D), with win-rate and EV.
+
+Backend
+	•	New tables and models:
+	•	price_history (id, ticker, date, open, close, high, low, volume, source, created_at)
+	•	event_stats (id, ticker, event_type, sample_size, win_rate, avg_abs_move_1d, avg_abs_move_5d, avg_abs_move_20d, mean_move_1d, mean_move_5d, mean_move_20d, updated_at)
+	•	Management job:
+	•	backend/jobs/fetch_prices.py: nightly backfill from free provider (Alpha Vantage/Yahoo). Config via PRICE_SOURCE, PRICE_API_KEY. Deduplicate on (ticker,date).
+	•	backend/jobs/recompute_event_stats.py: for each (ticker,event_type) compute returns vs event timestamp: close(t+N)/close(t-1)-1. Store in event_stats.
+	•	Endpoints:
+	•	GET /analytics/backtest?ticker=AAPL&event_type=earnings → returns distribution, win_rate, mean/median for 1/5/20D.
+	•	POST /analytics/recompute (admin only) to trigger recompute.
+	•	Tests: unit tests for return windows and stat math.
+
+Frontend
+	•	New panel on Company modal: “Historical Impact” with:
+	•	Three cards (1D/5D/20D): Win-rate %, Avg move %, sample size.
+	•	Distribution chart (histogram) using Recharts.
+	•	Acceptance: backtest renders within 300ms after cache, empty states handled.
+
+⸻
+
+2) Dynamic Event Severity & Confidence Scoring (A/B/C)
+
+Goal: replace static “impact” with rule-based score that adapts to context.
+
+Backend
+	•	New table: event_scores (event_id, base_score, context_score, final_score, rationale, computed_at).
+	•	Rule engine in backend/analytics/scoring.py:
+	•	Base by event type (e.g., FDA > earnings > 8-K misc).
+	•	Context multipliers: sector beta, company volatility (ATR), proximity to earnings, macro day (FOMC/Jobs), after-hours flag.
+	•	Confidence = min(sample_size factor from event_stats, source credibility).
+	•	On event ingest or update: compute and store final_score and rationale.
+	•	Endpoint: GET /events/{id}/score returns score + rationale.
+	•	Tests: scoring math and edge cases.
+
+Frontend
+	•	Replace static “Impact” chip with:
+	•	Badge color by score (low/med/high).
+	•	Tooltip: rationale bullets.
+	•	Sorting by score in lists.
+
+⸻
+
+3) Personalized Alerts (A/B/C)
+
+Goal: users control alert noise by ticker, sector, score threshold, and keywords.
+
+Backend
+	•	Tables:
+	•	alerts (id, user_id, name, min_score, tickers[], sectors[], event_types[], keywords[], channels[], active, created_at)
+	•	alert_logs (id, alert_id, event_id, sent_at, channel, status)
+	•	CRUD endpoints: POST/GET/PATCH/DELETE /alerts.
+	•	Dispatcher:
+	•	Background job alerts/dispatch.py: on new scored event, evaluate against each active alert. Rate-limit per user. Channels: in-app + email (use existing SMTP config).
+	•	Tests for filter logic and rate limits.
+
+Frontend
+	•	Page: /dashboard/alerts with:
+	•	Form to create alert (chips for tickers/sectors/event types, score slider, keyword list).
+	•	Table of alerts with last triggered.
+	•	In-app notifications: toast + bell icon badge.
+
+⸻
+
+4) Portfolio-Aware Insights (A/B/C)
+
+Goal: show event risk for what the user actually owns. Start with manual import; broker APIs later.
+
+Backend
+	•	Tables:
+	•	user_portfolios (id, user_id, name, created_at)
+	•	portfolio_positions (id, portfolio_id, ticker, qty, avg_price, as_of)
+	•	Endpoints:
+	•	POST /portfolio/upload accepts CSV (columns: ticker, qty, avg_price, as_of).
+	•	GET /portfolio/insights returns upcoming events for held tickers, with historical impact stats + dynamic score.
+	•	CSV parser with validation and symbol normalization.
+	•	Tests for parsing, joins, and insights.
+
+Frontend
+	•	Tab “Portfolio”:
+	•	CSV upload + preview.
+	•	“Upcoming Risk” table: ticker, next event, T-minus, score, typical move (1D/5D), link to company modal.
+	•	Empty state messaging if no positions.
+
+⸻
+
+5) Realtime “To-the-Second” Experience (A/B/C)
+
+Goal: live feed and status without refresh.
+
+Backend
+	•	WebSocket at GET /ws/events:
+	•	Broadcast newly scored events {ticker, event_type, score, time, headline, url}.
+	•	Heartbeat every 15s; close on auth loss.
+	•	Internal pub/sub (simple in-proc queue for now).
+
+Frontend
+	•	Hook useLiveEvents.ts connects to WS, merges into Zustand store.
+	•	UI:
+	•	“Live Tape” widget on dashboard left: rolling feed with time-ago stamps.
+	•	“Last scan: 12s ago” indicator.
+	•	Retry with exponential backoff. Offline state handled.
+
+⸻
+
+Pricing & Access (enforcement)
+	•	Free plan: no API access, no CSV export, alerts limited to 1, no portfolio insights.
+	•	Pro: full dashboard + alerts + backtesting + 10k API calls/mo.
+	•	Team: SSO, higher API, priority queue.
+	•	Update server guards: middleware reads plan from session and blocks endpoints accordingly with 403 PLAN_LIMIT.
+
+⸻
+
+Data correctness (bug you saw)
+	•	Fix source links/dates:
+	•	Ensure each event stores source_url and source_published_at as provided by the scraper.
+	•	Add constraint: CHECK (source_url ~* '^https?://').
+	•	Add integration test: clicking source in UI opens exact URL; date displays source_published_at not “ingested_at”.
+	•	Backfill job to repair any example.com/* placeholders.
+
+⸻
+
+Migrations, seeds, and jobs
+	•	Create Alembic migration for all new tables.
+	•	Add Makefile targets:
+	•	make migrate, make jobs.prices, make jobs.recompute, make jobs.alerts.
+	•	Seed: minimal sample price_history for AAPL/ABBV/AMD to demo backtesting.
+
+⸻
+
+Tests & QA
+	•	Backend: pytest suites for analytics, alerts, portfolios, scoring.
+	•	Frontend: Playwright smoke:
+	•	Load dashboard, receive a WS event, open company modal, see historical stats, create an alert, upload CSV, see insights.
+	•	Acceptance:
+	•	P95 API latency for /analytics/backtest < 400ms with cache.
+	•	WS reconnects under network flap.
+
+⸻
+
+Config & env
+
+Add to .env (document in README):
+
+PRICE_SOURCE=yahoo
+PRICE_API_KEY=
+ALERT_RATE_PER_MIN=30
+WS_ORIGIN=https://*.replit.dev
+
+
+⸻
+
+Deliverables
+	•	Code, migrations, tests, and docs.
+	•	Demo data loaded; all pages render.
+	•	“What’s New” changelog entry + simple in-app tour highlighting the five features.
+
+Run after changes:
+	1.	cd backend && alembic upgrade head
+	2.	make jobs.prices && make jobs.recompute
+	3.	Start services:
+	•	API: cd backend && uvicorn api.main:app --host 0.0.0.0 --port 8080
+	•	Web: cd marketing && npm i && npm run dev -p 5000
+
+Do not change existing routes/UI except where specified.

@@ -1,0 +1,26 @@
+[
+  {
+    "ticker": "TTWO",
+    "company": "Take-Two Interactive",
+    "primary_event": "GTA 6 Release",
+    "event_date": "2025-10-15",
+    "impact_score": 95,
+    "added_date": "2025-11-08T01:49:03.450388"
+  },
+  {
+    "ticker": "AAPL",
+    "company": "Apple Inc.",
+    "primary_event": "iPhone 17 Release",
+    "event_date": "2026-01-08",
+    "impact_score": 83,
+    "added_date": "2025-11-08T01:49:03.450402"
+  },
+  {
+    "ticker": "NVDA",
+    "company": "NVIDIA Corporation",
+    "primary_event": "RTX 6090 GPU Launch",
+    "event_date": "2025-12-20",
+    "impact_score": 78,
+    "added_date": "2025-11-08T01:49:03.450404"
+  }
+]

@@ -1,0 +1,149 @@
+modules = ["python-3.11", "nodejs-20", "python3", "postgresql-16"]
+
+[nix]
+channel = "stable-25_05"
+packages = ["cargo", "chromium", "gcc", "glibcLocales", "libiconv", "libxcrypt", "lsof", "ocl-icd", "opencl-headers", "pkg-config", "rustc", "xsimd", "zip", "imagemagick"]
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["streamlit", "run", "app.py", "--server.port", "5000"]
+
+[agent]
+integrations = ["web_scraper:1.0.0", "resend:1.0.0", "twilio:1.0.0"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "marketing_site"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "fastapi_backend"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "scan_worker"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "streamlit_app"
+
+[[workflows.workflow]]
+name = "marketing_site"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd marketing && npm run dev"
+waitForPort = 5000
+
+[[workflows.workflow]]
+name = "fastapi_backend"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && uvicorn api.main:app --host 0.0.0.0 --port 8080"
+waitForPort = 8080
+
+[[workflows.workflow]]
+name = "scan_worker"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && python3 jobs/scan_worker.py"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "streamlit_app"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && streamlit run app.py --server.port 9000 --server.address 0.0.0.0"
+
+[[ports]]
+localPort = 3000
+externalPort = 5000
+
+[[ports]]
+localPort = 5000
+externalPort = 8080
+
+[[ports]]
+localPort = 8080
+externalPort = 6000
+
+[[ports]]
+localPort = 8501
+
+[[ports]]
+localPort = 33291
+externalPort = 4200
+
+[[ports]]
+localPort = 33507
+externalPort = 8000
+
+[[ports]]
+localPort = 35409
+externalPort = 3001
+
+[[ports]]
+localPort = 38121
+externalPort = 8008
+
+[[ports]]
+localPort = 38533
+externalPort = 80
+
+[[ports]]
+localPort = 38911
+externalPort = 5173
+
+[[ports]]
+localPort = 39763
+externalPort = 3002
+
+[[ports]]
+localPort = 40117
+externalPort = 6800
+
+[[ports]]
+localPort = 42691
+externalPort = 9000
+
+[[ports]]
+localPort = 43945
+externalPort = 8099
+
+[[ports]]
+localPort = 44045
+externalPort = 8081
+
+[[ports]]
+localPort = 45279
+externalPort = 3000
+
+[[ports]]
+localPort = 46333
+externalPort = 3003

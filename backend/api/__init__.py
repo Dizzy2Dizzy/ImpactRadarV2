@@ -1,0 +1,1 @@
+"""Impact Radar FastAPI Backend"""

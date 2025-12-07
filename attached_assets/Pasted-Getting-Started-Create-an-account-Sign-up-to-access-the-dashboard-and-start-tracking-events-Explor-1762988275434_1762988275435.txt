@@ -1,0 +1,100 @@
+Getting Started
+Create an account - Sign up to access the dashboard and start tracking events
+Explore the dashboard - See recent events, active scanners, and tracked companies
+Add companies to your watchlist - Track specific tickers you care about
+Set up alerts - Get notified when important events happen
+Dashboard Overview
+Overview Tab
+Your main hub showing:
+
+Recent events with impact scores
+Upcoming events you should know about
+Number of active scanners running
+Total companies being tracked
+Live Tape showing real-time events as they happen
+Events Page
+Browse all events with powerful filtering options. Each event shows:
+
+Impact Score (0-100) - How significant this event is
+Direction - Positive, negative, neutral, or uncertain
+Confidence (%) - How sure the system is about the impact
+Event Type - SEC filing, FDA announcement, earnings, etc.
+Source Link - Direct link to verify the information
+Companies Page
+View all tracked companies with event counts. Click any company to see:
+
+Full timeline of events for that company
+Sector and basic company information
+Projected percentage moves based on historical data
+Watchlist
+Track specific tickers you care about. For each ticker you can:
+
+Add personal notes
+See all recent events
+Quickly identify high-impact events
+Remove tickers when you're no longer interested
+Portfolio
+Upload your holdings via CSV to see upcoming events that could affect your positions:
+
+Upload format: ticker, quantity
+See upcoming events for your holdings
+View typical price moves (1-day, 5-day, 20-day)
+Calculate exposure: expected move × quantity × price
+Scanner Status
+View all active scanners and their current status. Scanners run automatically at scheduled intervals:
+
+SEC EDGAR - Monitors 8-K, 10-K, 10-Q filings
+FDA Announcements - Tracks drug approvals and clinical trial updates
+Company Press Releases - Captures official company announcements
+Earnings Calls - Detects quarterly earnings releases
+M&A Activity - Identifies merger and acquisition announcements
+Product Launches - Tracks new product releases
+Guidance Updates - Monitors forward guidance changes
+Dividends & Buybacks - Captures dividend and share repurchase announcements
+You can manually trigger a scan for any scanner using the Queue Manual Scan button. Rate limit: 1 scan per 2 minutes.
+
+Live Tape
+The Live Tape shows real-time market events as they happen. Features include:
+
+Filter by ticker to watch specific stocks
+Filter by event type to focus on what matters
+Set minimum score to hide low-impact events
+Pause/resume the feed when you need to review
+See time since last update to know the feed is active
+Note: You must be logged in to see the Live Tape.
+
+Alerts
+Set up alerts to get notified when important events happen:
+
+Set minimum score threshold (e.g., only alert for scores above 70)
+Filter by event type (e.g., only M&A announcements)
+Filter by sector (e.g., only biotech events)
+Choose delivery: in-app notifications, email, or both
+Enable or disable alerts anytime
+Understanding Impact Scores
+Every event gets three key metrics:
+
+Impact Score (0-100)
+How significant the event is. Higher scores mean bigger potential impact. Calculated using sector analysis, timing, market conditions, and event type.
+
+Direction
+Whether the event is likely positive, negative, neutral, or uncertain for the stock price.
+
+Confidence (0-100%)
+How confident the system is about the impact and direction. Higher confidence means the prediction is more reliable based on historical patterns.
+
+Plans & Features
+Release Radar offers different plans based on your needs:
+
+Free - Limited event history, basic filtering
+Pro - Full event history, advanced filtering, alerts, portfolio tracking
+Team - Everything in Pro plus team collaboration features
+New users get a 7-day free trial of Pro features to explore the full platform.
+
+Pro Tips
+Check the Live Tape first thing in the morning to catch overnight events
+Set alerts for your watchlist tickers so you never miss important news
+Use the source links to verify events before making trading decisions
+Higher impact scores combined with high confidence are the most actionable
+Upload your portfolio to see which of your holdings have upcoming catalysts
+Filter events by sector to focus on your area of expertise

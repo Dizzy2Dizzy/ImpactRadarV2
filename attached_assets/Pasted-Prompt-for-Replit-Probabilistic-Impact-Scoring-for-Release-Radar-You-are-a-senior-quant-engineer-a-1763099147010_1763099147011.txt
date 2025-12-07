@@ -1,0 +1,241 @@
+Prompt for Replit – Probabilistic Impact Scoring for Release Radar
+You are a senior quant engineer and backend dev.
+My project is Release Radar, a Python-based backend with an existing impact_scoring.py and event ingestion/verification pipeline. I want you to replace the current ad-hoc scoring with a probabilistic, event-study based impact scoring system with clear semantics:
+	•	impact_score (0–100): measures probability of a sizable move in price after an event.
+	•	direction (“positive” / “negative” / “neutral”): sign of expected move.
+	•	confidence (0–100): how much historical data supports that prediction.
+	•	rationale (string): short explanation of why the system chose that score.
+Implement the following steps in my existing codebase (Python backend). Use new modules where appropriate but keep it integrated with current impact_scoring.py, the events DB, and the scanners.
+⸻
+1) Define exactly what we’re predicting
+Add a module impact_models/definitions.py (create the impact_models/ package if needed) with:
+	•	A config dataclass:
+from dataclasses import dataclass
+@dataclass
+class ImpactTargetConfig:
+    horizon_days: int          # e.g. 1-day horizon
+    threshold_pct: float       # e.g. 3.0 = 3%
+    benchmark: str             # e.g. "SPY" or sector ETF ticker
+	•	Set defaults:
+DEFAULT_IMPACT_TARGET = ImpactTargetConfig(
+    horizon_days=1,
+    threshold_pct=3.0,
+    benchmark="SPY",
+)
+Semantics:
+	•	For each event we compute an abnormal return R over horizon_days:
+	•	R = (stock return over window) – (benchmark return over window).
+	•	The scoring system estimates:
+	•	p_move = P(|R| > threshold_pct)
+	•	p_up   = P(R > threshold_pct)
+	•	p_down = P(R < -threshold_pct)
+Everything else is derived from these three probabilities.
+⸻
+2) Historical event-study baseline
+Create impact_models/event_study.py that:
+	1.	Extracts historical events from the existing DB:
+	•	Use your current events table (likely via SQLAlchemy in database.py / data_manager.py).
+	•	For each event, you must have:
+	•	ticker
+	•	event_type (earnings, 8-K category, FDA approval, etc.)
+	•	sector
+	•	market_cap_bucket (if not present, derive from a market cap field or simple bucket logic)
+	•	event_date
+	2.	Fetches historical prices and benchmark prices using whatever you already use (likely yfinance):
+	•	Helper function (put it in impact_models/prices.py):
+import pandas as pd
+def get_window_returns(
+    ticker: str,
+    benchmark: str,
+    event_date: pd.Timestamp,
+    horizon_days: int,
+) -> float:
+    """
+    Returns abnormal return R (in percent) over [event_date, event_date + horizon_days].
+    """
+    ...
+	•	R = (P_ticker_end / P_ticker_start - 1) - (P_bench_end / P_bench_start - 1), in %.
+	3.	Group events into buckets. Define a grouping key function:
+def make_group_key(event) -> tuple[str, str, str]:
+    """
+    Returns group key (event_type, sector, cap_bucket).
+    """
+For each group G = (event_type, sector, cap_bucket):
+	•	Collect all R_i (abnormal returns in %).
+	•	Compute:
+mu_G = np.mean(R_i)
+sigma_G = np.std(R_i, ddof=1)
+n_G = len(R_i)
+	•	Store them in a table or model structure:
+@dataclass
+class GroupPrior:
+    event_type: str
+    sector: str
+    cap_bucket: str
+    mu: float
+    sigma: float
+    n: int
+	4.	Persist priors:
+	•	Add a new DB table event_group_priors (via migration) with columns:
+	•	id
+	•	event_type
+	•	sector
+	•	cap_bucket
+	•	mu
+	•	sigma
+	•	n
+	•	updated_at
+	•	UNIQUE(event_type, sector, cap_bucket)
+	•	Write an offline script train_impact_priors.py that:
+	•	Reads historical events from DB,
+	•	Computes R_i for each,
+	•	Aggregates by group key,
+	•	Writes/upserts rows in event_group_priors.
+⸻
+3) Probability formulas from priors
+Still in impact_models/event_study.py, implement the core formulas (Normal assumption):
+For a group prior (mu_G, sigma_G) and threshold T:
+	•	P(|R| > T):
+from math import sqrt
+from scipy.stats import norm
+def p_move(mu: float, sigma: float, T: float) -> float:
+    if sigma <= 0:
+        return 0.0
+    z = (T - mu) / sigma
+    return 2.0 * (1.0 - norm.cdf(z))
+	•	Directional probabilities:
+def p_up(mu: float, sigma: float, T: float) -> float:
+    if sigma <= 0:
+        return 0.5
+    z = (T - mu) / sigma
+    return 1.0 - norm.cdf(z)
+def p_down(mu: float, sigma: float, T: float) -> float:
+    if sigma <= 0:
+        return 0.5
+    z = (-T - mu) / sigma
+    return norm.cdf(z)
+These functions will be called later by impact_scoring.py.
+⸻
+4) Confidence based on sample size & uncertainty
+In impact_models/confidence.py, implement:
+import math
+def compute_confidence(
+    n: int,
+    sigma: float,
+    sigma_market: float = 2.0,
+    n0: int = 50,
+    alpha: float = 0.7,
+) -> float:
+    """
+    Returns confidence in [0, 1].
+    - n: number of historical events in the group
+    - sigma: std dev of group abnormal returns
+    - sigma_market: typical 1-day market volatility in %
+    - n0: prior pseudo-count
+    - alpha: penalty scale for noisy groups
+    """
+    if n <= 0:
+        return 0.0
+    conf_raw = n / (n + n0)
+    noise_penalty = math.exp(-alpha * (sigma / sigma_market))
+    return max(0.0, min(1.0, conf_raw * noise_penalty))
+Then in impact_scoring.py you will map confidence in [0,1] → [0,100].
+⸻
+5) Mapping to impact_score, direction, and rationale
+Refactor impact_scoring.py to use the new priors.
+	1.	Add a function score_event(event_id) that:
+	•	Looks up the event in the DB (events table).
+	•	Builds the group key (event_type, sector, cap_bucket).
+	•	Fetches the matching prior from event_group_priors. If not found, fall back to a broader prior (e.g. sector-only) or mark as default.
+	2.	Using DEFAULT_IMPACT_TARGET, compute:
+T = target.threshold_pct
+p_move_val = p_move(mu, sigma, T)
+p_up_val = p_up(mu, sigma, T)
+p_down_val = p_down(mu, sigma, T)
+conf_01 = compute_confidence(n, sigma)
+	3.	Map to impact_score:
+import math
+def to_impact_score(p_move: float) -> int:
+    # raw scale
+    s = 100.0 * p_move
+    # shape so 50% stays near middle but high probabilities saturate
+    k = 15.0
+    shaped = 50.0 + 50.0 * math.tanh((s - 50.0) / k)
+    return int(round(max(0.0, min(100.0, shaped))))
+	4.	Determine direction:
+def infer_direction(p_up: float, p_down: float, buffer: float = 0.05) -> str:
+    if p_up > p_down + buffer:
+        return "positive"
+    if p_down > p_up + buffer:
+        return "negative"
+    return "neutral"
+	5.	Map confidence to 0–100:
+def to_confidence_score(conf_01: float) -> int:
+    return int(round(max(0.0, min(1.0, conf_01)) * 100.0))
+	6.	Build a short rationale:
+def build_rationale(event, prior, p_move_val, p_up_val, p_down_val, n):
+    return (
+        f"Based on {n} similar {event.event_type} events in the {event.sector} sector "
+        f"for {event.cap_bucket} companies, the historical mean abnormal move over "
+        f"{DEFAULT_IMPACT_TARGET.horizon_days} day(s) is {prior.mu:.2f}% with "
+        f"volatility {prior.sigma:.2f}%. Estimated probability of a move larger than "
+        f"{DEFAULT_IMPACT_TARGET.threshold_pct:.1f}% is {p_move_val*100:.1f}% "
+        f"(up: {p_up_val*100:.1f}%, down: {p_down_val*100:.1f}%)."
+    )
+	7.	Store results back into the events row:
+	•	Ensure the events table has columns:
+	•	impact_score (int)
+	•	impact_confidence (int)
+	•	impact_direction (string)
+	•	impact_p_move, impact_p_up, impact_p_down (floats)
+	•	impact_rationale (text)
+	•	impact_score_version (int)
+	•	Write a function update_event_impact(event_id, score_data) in your current data manager.
+⸻
+6) Offline training & recalibration script
+Create train_impact_models.py at the backend root that:
+	1.	Rebuilds priors via impact_models/event_study.py and writes to event_group_priors.
+	2.	Logs summary stats:
+	•	number of events per group
+	•	mean and sigma ranges
+	3.	Optionally performs calibration:
+	•	On a held-out set of historical events, compare predicted p_move to actual indicator I(|R|>T).
+	•	Compute reliability metrics (Brier score, calibration curve).
+	•	(If you want, fit an isotonic regressor; for now just log calibration results.)
+	4.	Rescores all historical events:
+	•	Iterate through events table where impact_score_version < CURRENT_VERSION.
+	•	Call score_event(event.id) and update each row.
+Expose a CLI entry so we can run:
+python train_impact_models.py
+on Replit.
+⸻
+7) Integration with the current verification / UI system
+	1.	Wherever you currently compute impact scores (existing impact_scoring.py logic), replace it with calls to score_event(event_id) that use the priors and formulas above.
+	2.	In the events dashboard UI:
+	•	Show:
+	•	impact_score (0–100) with color scale
+	•	impact_direction (arrow up/down/flat)
+	•	impact_confidence (0–100)
+	•	On hover or expand, display impact_rationale.
+	•	Distinguish default / fallback scores:
+	•	If no prior was found (n=0), set impact_score = 50, confidence = 0–20, and label as “Baseline (insufficient historical data)”.
+	3.	In the event detail view, clearly mark:
+	•	“This is a model-estimated impact based on historical behavior of similar events. It is not a guarantee of future performance and not investment advice.”
+	•	Include the actual p_move, p_up, p_down numbers so power users can see the underlying probabilities.
+	4.	In the backoffice / admin / scanner status page, add:
+	•	A small “Impact Model Health” card:
+	•	Number of groups in event_group_priors.
+	•	Average n_G.
+	•	Last training timestamp.
+⸻
+Implementation notes
+	•	Use idiomatic Python with type hints.
+	•	Use numpy, pandas, scipy (for norm.cdf), and your existing DB layer (sqlalchemy or similar).
+	•	Keep the existing scanner & event ingestion code, but route all new scores through the new impact model functions.
+	•	Make sure migrations are added cleanly so the DB works in Replit without manual SQL.
+When you’re done, print a short summary:
+	•	Number of groups created in event_group_priors
+	•	Example prior (event_type, sector, cap_bucket, mu, sigma, n)
+	•	Example scored event (id, impact_score, direction, confidence, p_move)
+Implement all of this inside my current backend and wire it into the existing verification system for events.
+

@@ -1,0 +1,164 @@
+You are a senior security-focused engineer working on the Release Radar repo.
+Your job is to verify and harden the system against these 5 risks:
+	1.	Access control mistakes → one user seeing another’s data.
+	2.	Secrets/key leakage → JWT signing keys, Stripe keys, API keys.
+	3.	Untrusted data rendering (events, titles) → XSS and token theft.
+	4.	Third-party / webhook spoofing → fake payments, spam.
+	5.	Abuse / DoS → heavy usage or malicious hits degrading service.
+
+Use the existing codebase and EVALUATION_REPORT.md as context.
+Implement in this order, and add tests where possible.
+
+⸻
+
+1) Access Control: verify and enforce user/org isolation
+
+Goal: It must be impossible for user A to read or modify user B’s data via the API or WebSockets.
+
+Tasks:
+	•	Audit all backend routes (FastAPI) that touch user-scoped data:
+	•	Alerts, portfolios, watchlists, API keys, scanner jobs, scoring results, notifications, etc.
+	•	For each handler, ensure queries are scoped by:
+	•	user_id and/or org_id, not just a raw id.
+	•	Confirm admin-only routes (scanner triggers, metrics, rescoring, etc.):
+	•	Are protected by a robust is_admin check in the backend (not just hidden in the frontend).
+	•	Return 403 for non-admins.
+
+Add tests:
+	•	Backend tests:
+	•	“User A cannot read User B’s alerts/portfolio/watchlist/API keys.”
+	•	“Non-admin cannot call admin-only scanner endpoints.”
+	•	If not present, add at least one test confirming WebSocket connections only stream events appropriate to that user/org.
+
+Update EVALUATION_REPORT.md with a short “Access Control Audit” section summarizing what was checked and fixed.
+
+⸻
+
+2) Secrets / Key Leakage: prevent exposure in code and logs
+
+Goal: No secrets (JWT keys, Stripe keys, DB passwords, API keys) should ever appear in code, logs, or frontend.
+
+Tasks:
+	•	Scan the repo for any hardcoded secrets or test keys:
+	•	JWT signing keys, Stripe API keys, DB URLs, SMTP/Twilio, etc.
+	•	Ensure all are read from environment variables or secret config, not committed.
+	•	Review logging configuration:
+	•	Ensure no logs include:
+	•	Authorization headers
+	•	JWTs
+	•	API keys
+	•	Email verification codes
+	•	Full portfolio contents
+	•	If necessary, introduce a logging helper that masks sensitive fields.
+	•	Verify the frontend:
+	•	No API keys or secrets are bundled into the Next.js client.
+	•	Public config is limited to safe values (e.g. public base URLs), never secrets.
+
+Add tests / checks:
+	•	Add a simple automated check or script (e.g. in CI) that fails if known secret patterns (sk_live_, pk_live_, Bearer  + token, etc.) are found in the repo or tests.
+	•	Add at least one test that ensures sensitive headers are not logged in a sample request.
+
+Update SECURITY.md and EVALUATION_REPORT.md to reflect how secrets are handled.
+
+⸻
+
+3) XSS Hardening: untrusted data rendering
+
+Goal: Event data (titles, descriptions, company names) must never execute JavaScript in the browser.
+
+Tasks:
+	•	Identify all places in the frontend where event data is rendered:
+	•	Event tables, modals, tooltips, notifications, live tape, etc.
+	•	Ensure:
+	•	No dangerouslySetInnerHTML is used for untrusted fields.
+	•	Event titles/descriptions/company names are rendered as plain text.
+	•	If there is legitimate HTML content:
+	•	Use a sanitizer library on the server or client, with a strict allowlist.
+
+Add tests:
+	•	Frontend test (or integration test):
+	•	Seed an event with a title such as:
+	•	<script>alert("xss")</script>
+	•	Verify the rendered UI shows this as literal text and does not execute any script.
+	•	If you have E2E tests (Playwright or similar):
+	•	Add one scenario with a malicious title and assert there is no alert and no console errors related to XSS.
+
+Document in SECURITY.md how untrusted text is handled.
+
+⸻
+
+4) Third-Party / Webhook Spoofing (Stripe, email, etc.)
+
+Goal: Nobody can fake payment events or abuse notification channels.
+
+Tasks:
+	•	Stripe:
+	•	Verify that the Stripe webhook endpoint:
+	•	Validates the Stripe signature using the webhook signing secret.
+	•	Rejects any webhook with invalid signature or timestamp.
+	•	Confirm plan changes and trial activations are only trusted if the signature is valid.
+	•	Add clear error handling and logging for invalid webhook attempts.
+	•	Email/SMS/notifications:
+	•	Ensure there is rate limiting for outbound alerts per user/org:
+	•	Cap alerts per minute/hour/day to avoid spam.
+	•	Validate email addresses and optionally mark unverified addresses as limited.
+
+Add tests:
+	•	Backend test:
+	•	“Stripe webhook with invalid signature is rejected and does not change plan.”
+	•	“Valid webhook updates plan as expected.”
+	•	Backend test:
+	•	“User cannot send more than N alerts per time window via notifications.”
+
+Update docs (replit.md / SECURITY.md) to note that Stripe webhooks are verified and alerts are rate-limited.
+
+⸻
+
+5) Abuse / DoS Protection (API, WebSockets, scanners)
+
+Goal: Malicious or heavy usage cannot easily take down the service.
+
+Tasks:
+	•	HTTP API:
+	•	Review existing rate limits:
+	•	Login, register, password reset → more strict.
+	•	Scoring, scanning, analytics endpoints → per-key and per-IP limits.
+	•	Ensure error for rate limit is consistent (e.g. 429 with JSON error body).
+	•	WebSockets:
+	•	Enforce:
+	•	Max connections per user/IP.
+	•	Reasonable message rate limits if the client can send messages.
+	•	Connection idle timeouts.
+	•	Scanners / jobs:
+	•	Ensure bounded concurrency and backoff remain in place.
+	•	Add guards so manual scanner triggers cannot bypass backoff logic or overload upstream sources.
+
+Add tests / metrics:
+	•	Tests for rate-limiting:
+	•	Simulate repeated calls from one user/IP and confirm 429 after threshold.
+	•	Expose additional metrics in /metrics:
+	•	Rate-limit hits per endpoint.
+	•	Active WebSocket connection counts.
+
+Update EVALUATION_REPORT.md with a “Rate Limiting & DoS Protection” section summarizing changes.
+
+⸻
+
+Acceptance Criteria
+	•	Access control:
+	•	All user/scoped endpoints enforce user_id/org_id.
+	•	Admin-only endpoints are not reachable by normal users (covered by tests).
+	•	Secrets:
+	•	No hardcoded secrets in the repo.
+	•	No sensitive values logged or exposed to frontend.
+	•	XSS:
+	•	Event text cannot execute JS; malicious titles are safely rendered.
+	•	Webhooks:
+	•	Stripe webhooks fully validated; fake events cannot change plans.
+	•	Alerts/emails rate-limited to prevent spam/abuse.
+	•	DoS:
+	•	Practical rate limits on key endpoints and WebSockets.
+	•	New tests and metrics validate this behavior.
+	•	SECURITY.md and EVALUATION_REPORT.md updated to reflect the new hardening work.
+
+Please make changes in small, logical commits and keep all existing public APIs backward compatible unless a security issue forces a breaking change.

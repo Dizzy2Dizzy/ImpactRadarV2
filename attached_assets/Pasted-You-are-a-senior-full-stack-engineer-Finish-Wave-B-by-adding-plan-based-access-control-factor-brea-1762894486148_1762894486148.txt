@@ -1,0 +1,49 @@
+You are a senior full-stack engineer. Finish Wave B by adding plan-based access control, factor breakdowns in the score API, and full UI integration.
+
+GOALS
+1) Gate scoring by plan: Free = no scores; Pro/Team = full access.
+2) Extend API payload with factor breakdown + confidence.
+3) Render scores in the Companies modal/list with sorting, tooltips, and upgrade CTA.
+4) Add tests.
+
+BACKEND (FastAPI, port 8080)
+- Middleware: resolve user plan from JWT -> request.state.plan in {"free","pro","team"}.
+- Gate GET /scores/*:
+  - If plan=="free": return 402 Payment Required with {error:"UPGRADE_REQUIRED", feature:"scores"} and do NOT count as cache hit.
+  - pro/team: normal response.
+- Extend response schema for both endpoints:
+  {
+    event_id, ticker, score:int, confidence:float,
+    factors: {
+      sector:int, volatility:int, earnings_proximity:int,
+      market_mood:int, after_hours:int, duplicate_penalty:int
+    },
+    computed_at
+  }
+- Ensure POST /scores/rescore clears cache keys for affected events.
+- Update /metrics: add counters {scores_denied_free_total, scores_served_total} and gauge {scores_cache_size}.
+
+FRONTEND (Next.js)
+- In Companies/Events modal:
+  - Fetch scores for visible events via /api/proxy to backend.
+  - If plan=="free": show lock icon + inline CTA “Upgrade to Pro to view impact scores” linking to /pricing?feature=scores. Do not call the scores API.
+  - Else render right-aligned pill: “Score {score}”
+      Color scale: 0–39 #9CA3AF, 40–59 #F59E0B, 60–79 #FB923C, 80–100 #EF4444.
+      2px confidence bar (width = confidence*100%).
+      Tooltip lists the 3 largest |factor| contributors with +/- values.
+  - Add Sort dropdown {Score desc, Impact desc, Date desc}. Default “Score desc”.
+- Persist sort in querystring (?sort=score_desc) and maintain on pagination/expand.
+
+TESTS
+- Backend: unit tests for plan gate (free=402), schema shape, cache bypass on 402, metrics counters increment.
+- Integration: rescore invalidates cache; subsequent GET returns new ETag.
+- Frontend: basic render test for free vs pro (CTA vs badge).
+
+ACCEPTANCE
+- Free users never see scores and receive 402 from API; Pro sees colored badges + confidence bars.
+- Sorting works and persists; tooltips show factor deltas.
+- /metrics exposes new counters; /healthz still 200.
+- All new tests pass.
+
+Deliver:
+- Code changes + brief README patch describing plan gate and UI usage.

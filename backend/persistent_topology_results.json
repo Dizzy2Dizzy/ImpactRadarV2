@@ -1,0 +1,36 @@
+{
+  "timestamp": "2025-12-04T02:49:08.055607",
+  "stocks_analyzed": 14,
+  "feature_summary": {
+    "avg_betti0": 238.5,
+    "avg_betti1": 86.35714285714286,
+    "avg_entropy": 0.9428671275071459,
+    "avg_complexity": 181.15203690488346
+  },
+  "backtest": {
+    "total_events": 200,
+    "events_with_features": 1,
+    "baseline_accuracy": 0.6083333333333333,
+    "topology_enhanced_accuracy": 1.0,
+    "improvement": 0.3916666666666667,
+    "feature_correlation_with_returns": {},
+    "cluster_analysis": {
+      "high_complexity": {
+        "count": 1,
+        "avg_return": 1.5242255122032546,
+        "positive_rate": 1.0
+      },
+      "low_complexity": {
+        "count": 0,
+        "avg_return": 0,
+        "positive_rate": 0
+      }
+    }
+  },
+  "recommendations": [
+    "POSITIVE: Detected non-trivial H1 features (loops) - price patterns have meaningful topology",
+    "POSITIVE: Persistent features improved accuracy by 39.2%",
+    "INSIGHT: High persistence entropy indicates complex market dynamics",
+    "NEXT STEP: Integrate persistent features into Market Echo Engine ML pipeline"
+  ]
+}

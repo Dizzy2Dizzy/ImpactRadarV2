@@ -1,0 +1,50 @@
+You are a senior engineer working on the Release Radar project.
+Wave G (Production Gap Closure) is complete and the system is now graded A- (92/100) and production-ready on the backend.
+
+I now want Wave H – Launch Polish & Growth focused on upgrading the website and making Release Radar ready for real users and external developers. Use the existing codebase and EVALUATION_REPORT.md as context.
+
+Please implement the following, in order:
+	1.	Frontend + E2E Tests
+	•	Add a small but meaningful E2E test suite (Playwright or similar) that covers:
+	•	Sign up → login flow.
+	•	Creating an alert and verifying it appears in the Alerts UI (use seeded events).
+	•	Uploading a sample portfolio CSV and seeing exposure metrics in the Portfolio tab.
+	•	Navigating dashboard tabs (Overview, Portfolio, Watchlist, Companies Tracked) and expanding a company to see events and scores.
+	•	Add an npm/yarn script and documentation in replit.md explaining how to run these tests locally and in CI.
+	2.	Global Error Handling & UX
+	•	In the FastAPI backend, add a global error handler that returns a consistent JSON shape for errors (e.g. { "error_code": "...", "message": "...", "details": {...} }).
+	•	Update existing routers to use this pattern instead of ad-hoc error responses where possible.
+	•	In the Next.js frontend, add centralized error handling:
+	•	For API calls, show clear toasts or inline errors when requests fail (auth errors, 402, 403, 429, 500).
+	•	Make sure portfolio upload errors (invalid CSV, unknown tickers) and manual actions (creating alerts, rescans) show user-friendly messages.
+	3.	Public API Documentation & Developer Landing
+	•	Generate an OpenAPI spec from the FastAPI app (if not already exported) and expose it via an endpoint (e.g. /openapi.json).
+	•	Create a dedicated API docs page in the marketing site (e.g. /docs/api) that includes:
+	•	Overview of authentication (API keys / JWT), rate limits, and plan-based restrictions.
+	•	Example requests for key endpoints: scores, events, scanners, portfolio exposure, and backtesting.
+	•	Code examples in curl, Python, and JavaScript using the existing endpoints.
+	•	Link this page from the main navigation or from the Docs section so external developers can discover it.
+	4.	Historical Stats API + UI Integration
+	•	Add clean, documented GET endpoints for historical event impact stats per ticker and event type (re-using the Wave A backtesting logic), returning fields like sample size, average ± move, and confidence.
+	•	Integrate this in the frontend:
+	•	In the Companies Tracked modal and/or event detail views, show an “Avg ±X% over last N events” badge with a tooltip describing sample size and methodology.
+	•	Make sure Free vs Pro plan restrictions are respected, and show an upgrade CTA if appropriate.
+	5.	Onboarding & Demo Experience
+	•	Improve the first-time-user UX:
+	•	Add friendly empty states and a lightweight onboarding checklist on the dashboard (e.g. “Upload a portfolio”, “Add watchlist tickers”, “Create your first alert”).
+	•	Implement a “Load demo data” option that loads a small demo portfolio and example alerts so a new user immediately sees how the product works without providing their own data.
+	6.	Polish & Documentation
+	•	Ensure all new features are documented in replit.md (how to run tests, how to generate OpenAPI, how to seed demo data).
+	•	Update EVALUATION_REPORT.md with a new section summarizing Wave H changes and re-evaluating:
+	•	Testing coverage (including frontend/E2E).
+	•	Developer experience (API docs).
+	•	UX readiness for public beta.
+
+Acceptance criteria:
+	•	E2E tests pass reliably and exercise the main user flows.
+	•	Errors from the backend are consistently shaped, and the UI surfaces them clearly.
+	•	API docs page exists, is discoverable from the site, and includes working examples.
+	•	Historical stats are available via a dedicated API and visible in the UI with clear sample sizes.
+	•	A first-time user (with no portfolio) can use demo data to see a meaningful dashboard within 30 seconds.
+
+Make incremental, well-structured commits and keep existing public APIs backward compatible unless a change is clearly justified and documented.

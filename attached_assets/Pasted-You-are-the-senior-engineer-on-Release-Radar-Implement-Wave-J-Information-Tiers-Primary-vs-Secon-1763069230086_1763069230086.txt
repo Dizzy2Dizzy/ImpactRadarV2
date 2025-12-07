@@ -1,0 +1,135 @@
+You are the senior engineer on Release Radar.
+Implement Wave J – Information Tiers (Primary vs Secondary) based on the current codebase and the security-hardened state. The goal is to:
+	•	Classify events into Primary vs Secondary information tiers.
+	•	Make this explicit in the data model, scoring, API, and UI.
+	•	Lay clean groundwork for future “secondary context” data sources (e.g. environmental, infra, macro risk).
+
+Do NOT break existing APIs; extend them.
+
+⸻
+
+1) Data model: add info tiers
+	1.	Update backend models:
+	•	In the Event model (where SEC/FDA/press events are stored), add:
+	•	info_tier: Enum("primary", "secondary") with default "primary".
+	•	info_subtype: Optional[str] (e.g. "ipo_flow", "infra_risk", "regulatory_context") to allow more granularity later.
+	•	Add an Alembic migration for these fields.
+	2.	Add a new table for secondary context signals (future alt-data):
+	•	ContextSignal:
+	•	id
+	•	ticker
+	•	source (e.g. "env", "infra", "macro")
+	•	signal_type (e.g. "water_risk", "power_risk", "geopolitical_risk")
+	•	severity (0–100)
+	•	description
+	•	observed_at
+	•	info_tier hard-coded "secondary" for now
+	•	Relation to Company by ticker and optionally CIK.
+	3.	Wire ContextSignal into the ORM session and make sure it participates in existing migrations/tests.
+
+⸻
+
+2) Classification logic: current scanners + manual events
+	1.	For existing scanners (SEC, FDA, Press):
+	•	In backend/scanners/impl/sec_edgar.py, fda.py, press.py:
+	•	Assign info_tier="primary" for:
+	•	SEC: 8-K, 10-K, 10-Q, S-1, major corporate actions.
+	•	FDA: approvals, CRLs, major advisory outcomes.
+	•	Press: major product launches, M&A announcements, guidance changes.
+	•	Optionally mark some events as info_subtype:
+	•	"ipo" for S-1/IPO-related filings.
+	•	"earnings" for earnings events already in your schema.
+	•	"regulatory_primary" for clearly price-driving regulatory events.
+	•	For now, you can leave all scanner-driven events as "primary" and rely on ContextSignal for “secondary.”
+	2.	Manual event entry / admin tools:
+	•	If you have admin/manual event creation endpoints:
+	•	Add info_tier and info_subtype fields (validated Enum + optional string).
+	•	Default to "primary" if omitted.
+	3.	Add classification helpers:
+	•	A small function, e.g. classify_info_tier(event_type, source, metadata) -> (info_tier, info_subtype) used by scanners so classification is centralized.
+	4.	Tests:
+	•	Add tests to verify SEC/FDA/Press-derived events are created with info_tier="primary" and correct info_subtype where applicable.
+
+⸻
+
+3) Integrate tiers into scoring
+	1.	Extend the scoring engine (compute_event_scores.py and related code):
+	•	Add an info_tier factor:
+	•	Primary events get full base score (no penalty).
+	•	Secondary-only items (future ContextSignal events) should modulate but not overshadow primary events.
+	•	For now, do NOT drastically change numeric behavior; just:
+	•	Add a “tier” factor in the factor breakdown payload returned by the scoring API:
+	•	info_tier_factor (e.g. 0 for primary, small ± weight for secondary)
+	•	info_tier and info_subtype included in the factor breakdown.
+	2.	ContextSignal + scoring (stub):
+	•	Implement an internal helper that, for a given ticker + time window, looks up ContextSignal rows and derives a context risk score (0–100).
+	•	For now, don’t change the main event score drastically. Instead:
+	•	Add this context risk as a separate field returned in event responses:
+	•	context_risk_score
+	•	context_signals (list of summarized ContextSignal items)
+	3.	Tests:
+	•	When info_tier="primary", base scoring behavior remains as before (within tolerance).
+	•	When there is a high context_risk_score, ensure it appears correctly in the factor breakdown and API responses.
+
+⸻
+
+4) API and docs: expose info tiers clearly
+	1.	API changes:
+	•	For event-related API endpoints (e.g. /events, /scores, /analytics/backtest):
+	•	Include info_tier and info_subtype fields in responses.
+	•	Include context_risk_score and context_signals where relevant.
+	•	Add query parameters:
+	•	info_tier=primary|secondary|both filter for endpoints that list events.
+	•	Default to both to preserve behavior.
+	2.	Update OpenAPI schema and API docs:
+	•	Document info_tier, info_subtype, and context_risk_score on relevant models.
+	•	Add a short explanation of Primary vs Secondary:
+	•	Primary: direct market-moving corporate/financial events.
+	•	Secondary: contextual risk factors (environment, infra, geo, etc.).
+
+⸻
+
+5) UI: Primary vs Secondary badges, filters, and context
+	1.	In the Next.js marketing/app UI:
+	•	In event lists (company modals, event tables, dashboard):
+	•	Add a badge/pill for info tier:
+	•	Primary (e.g. bold, strong color).
+	•	Secondary (e.g. subtle outline, contextual label: “Context Risk”).
+	•	Add filters on the dashboard:
+	•	Toggle: “Show: [Primary only] [Secondary only] [Both]”.
+	•	Persist choice in querystring or local storage.
+	2.	Company / Event detail:
+	•	For each event:
+	•	Show info_tier + short explanation tooltip:
+	•	Primary tooltip: “Direct corporate/financial event historically linked to price moves.”
+	•	Secondary tooltip: “Contextual risk factor that may influence how sensitive this stock is to shocks.”
+	•	If context_risk_score is present:
+	•	Show a small context risk meter (e.g. 0–100 bar or simple qualitative label: Low/Medium/High).
+	•	Optionally list top 1–3 context_signals texts below.
+	3.	Portfolio view:
+	•	In the portfolio exposure section:
+	•	Separate or annotate:
+	•	Primary upcoming events per holding.
+	•	Secondary context risk per holding (e.g. “Data center risk: Elevated”, “Supply chain risk: Medium”).
+	4.	Tests:
+	•	Frontend tests to ensure:
+	•	Tiers render correctly (primary vs secondary badges).
+	•	Filters change what is displayed.
+	•	Tooltips show correct explanations.
+
+⸻
+
+6) Documentation & acceptance
+	1.	Documentation:
+	•	Add a new section in SCORING.md (or a new INFO_TIERS.md) explaining:
+	•	The definition of Primary vs Secondary.
+	•	How they show up in the API and UI.
+	•	How context risk is intended to be used (interpretation, not direct signals).
+	•	Update EVALUATION_REPORT.md with a “Wave J – Information Tiers” section.
+	2.	Acceptance criteria:
+	•	Every event returned by the API has a correct info_tier and is backward compatible.
+	•	UI clearly distinguishes Primary vs Secondary events, and users can filter by tier.
+	•	Context risk is exposed but does not break or drastically alter existing scoring behavior.
+	•	Tests cover classification, API, and UI behavior.
+
+Keep existing behavior as the default; all additions must be backward compatible and feature-flagged only where absolutely necessary. Focus on clean modeling of info tiers and clear UX so users understand what’s “direct catalyst” vs “context risk.”

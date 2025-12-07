@@ -1,0 +1,177 @@
+Here’s a single, copy-paste prompt you can give Replit to turn your project into a fully working, investor-grade Release Radar app (marketing + real dashboard + API + background scanners), using the code already in your repo.
+
+⸻
+
+Prompt to Replit
+
+You are a senior full-stack engineer. Finish Release Radar as a production-ready, event-driven investing platform. Use the existing codebase I’ve provided (Python services, JSON seeds, impact scoring, scanners, etc.). Build a clean, Stripe/Vercel-style dashboard UI and a robust Python API that powers it.
+
+High-level architecture
+	•	Frontend: Next.js 14 (App Router) + Tailwind + shadcn/ui + Framer Motion + TanStack Table + Recharts.
+	•	Backend: Python FastAPI service (replace Streamlit for the product runtime) reusing my existing Python modules (database.py, data_manager.py, scanner_service.py, impact_scoring.py, email_service.py, sms_service.py, web_scraper.py, etc.).
+	•	DB: PostgreSQL (env var DATABASE_URL). Migrate + seed from the JSON I provided (data/*.json) or from my existing seeding scripts.
+	•	Background jobs: APScheduler (or asyncio tasks) running the SEC/FDA/Press-release scanners on intervals; persist results to Postgres.
+	•	Realtime: Server-Sent Events (SSE) endpoint from FastAPI to stream new discoveries & status; frontend subscribes.
+	•	Auth: NextAuth (credentials/email OTP) or a minimal FastAPI JWT auth (bcrypt for passwords is already in repo) — pick one and wire it end-to-end. Use secure cookies.
+	•	Payments: Stripe Checkout for Pro/Team with webhooks -> mark users.plan and unlock Pro features.
+
+File & process layout (keep marketing site intact)
+
+/marketing             # Next.js app (already exists) – becomes the full UI
+  /app
+  /components
+  /lib
+  /public
+  package.json
+  next.config.js
+  tailwind.config.ts
+  postcss.config.js
+
+/backend               # Python FastAPI service (new, replaces Streamlit runtime)
+  api.py               # FastAPI app here (see endpoints below)
+  services/            # reuse: data_manager.py, database.py, impact_scoring.py, scanner_service.py, ...
+  jobs/                # scheduler setup (apscheduler), job definitions
+  models/              # Pydantic schemas
+  seed.py              # seeds DB from data/*.json
+  requirements.txt     # include fastapi, uvicorn, apscheduler, sqlalchemy, psycopg, yfinance, bs4, trafilatura, requests, python-dotenv, bcrypt, pyjwt, twilio, email libs
+  .env.example
+
+/data                  # companies.json, events.json, watchlist.json (already provided)
+
+/replit                # run config (see “Run commands” below)
+
+Backend (FastAPI) – required endpoints
+
+Implement the following REST + SSE contract and reuse my existing Python logic wherever possible:
+
+Auth
+	•	POST /auth/register {email, password} -> create user (bcrypt).
+	•	POST /auth/login {email, password} -> set HTTP-only session cookie or return JWT.
+	•	POST /auth/logout.
+
+Companies & Events
+	•	GET /companies?query=&sector=&limit=&offset=
+	•	GET /companies/{id}
+	•	GET /events?company_id=&sector=&category=&from=&to=&min_score=&direction=
+	•	GET /events/{id}
+
+Watchlist & Bookmarks
+	•	GET /watchlist (user scoped)
+	•	POST /watchlist {company_id}
+	•	DELETE /watchlist/{company_id}
+
+Impact scoring
+	•	POST /impact/score {event fields} -> {score, direction, confidence, rationale} (wrap impact_scoring.py)
+
+Scanner status & discoveries
+	•	GET /scanners/status -> {sec: {last_run, discoveries}, fda: {…}, press: {…}}
+	•	GET /discoveries?since= -> recent items
+	•	GET /stream/discoveries (SSE) -> push new events + statuses in real time
+
+Portfolio/Earnings (simplified)
+	•	POST /portfolio/estimate {positions: [{ticker, qty, cost_basis}], events_window}
+-> apply impact scores and yfinance to estimate P&L deltas.
+
+Admin
+	•	POST /admin/scan/run {scanner: ‘sec’|‘fda’|‘press’} (protected: admin)
+	•	GET /healthz
+
+Notes
+	•	Use CORS for marketing origin.
+	•	Use SQLAlchemy session management in database.py.
+	•	Move the existing Streamlit file aside; do not use Streamlit to serve product UI.
+
+Background scanners
+	•	Create jobs/scheduler.py with APScheduler.
+	•	Intervals: SEC every 2 min, FDA every 5 min, Press pages every 3 min.
+	•	On discovery: parse -> normalize -> score with impact_scoring.py -> insert event -> emit on SSE channel.
+	•	Persist scanner_runs (id, source, started_at, finished_at, discoveries, error).
+
+Frontend (Next.js) – required pages & features
+
+Replace the “Coming soon” gate with a real app once logged in.
+
+Top-level routes
+	•	/ (Marketing home) – keep; polish hero, features, pricing.
+	•	/login, /register – working auth flows (email + password or email OTP).
+	•	/app (Dashboard shell) – Bloomberg/Vercel/Stripe-clean:
+	•	Left nav: Dashboard, Events, Companies, Watchlist, Portfolio, Scanners, Settings.
+	•	Dashboard: KPI cards (upcoming events, watchlisted events next 7d, latest discoveries SSE live feed); tiny chart of discoveries by sector.
+	•	Events: Virtualized table (TanStack Table) with column filters (sector, category, direction, score range, date). Row click -> drawer with full event detail (source links, rationale, confidence).
+	•	Companies: Search + sector filter; company page shows subsidiaries, upcoming events, price chart (Recharts), bookmark toggle.
+	•	Watchlist: CRUD, next event countdowns.
+	•	Portfolio: editable positions grid -> call /portfolio/estimate.
+	•	Scanners: live status from /scanners/status; logs accordion; “Run now” (admin only).
+	•	Settings: profile, API key (optional), plan, billing via Stripe.
+	•	Stripe: /pricing and /api/stripe/webhook -> on success set users.plan = 'pro'|'team'.
+
+UI libraries
+	•	shadcn/ui (Cards, Table, Drawer/Sheet, Dialogs, Tabs, Badge, Skeletons).
+	•	Recharts for small charts.
+	•	Framer Motion for subtle transitions.
+
+Data layer
+	•	Small /marketing/lib/api.ts for typed fetchers to the FastAPI endpoints (cookie-based auth or Bearer JWT).
+	•	SSE client for /stream/discoveries to append new events live.
+
+Environment variables (.env.example)
+
+# Frontend
+NEXT_PUBLIC_API_BASE=http://localhost:8501
+NEXTAUTH_SECRET= (if using NextAuth)
+
+# Backend
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:PORT/DB
+JWT_SECRET=change_me
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USER=
+SMTP_PASS=
+TWILIO_SID=
+TWILIO_TOKEN=
+TWILIO_FROM=
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+
+Run commands (Replit)
+	•	Main Run (Marketing UI):
+cd marketing && npm i && npm run dev -- -p 5000
+	•	Backend (second tab or Proc):
+cd backend && pip install -r requirements.txt && uvicorn api:app --host 0.0.0.0 --port 8501
+	•	Seed (one-off):
+cd backend && python seed.py
+	•	Scheduler: start inside api.py on startup (background task) or run from jobs/scheduler.py imported by api.py.
+
+Data model (use existing tables; add if missing)
+	•	users(id, email, password_hash, plan, created_at)
+	•	companies(id, name, ticker, sector, parent_id)
+	•	events(id, company_id, title, description, category, event_time, score, direction, confidence, rationale, source_url, created_at)
+	•	watchlists(user_id, company_id, created_at)
+	•	scanner_runs(id, source, started_at, finished_at, discoveries, error)
+
+Quality gates / Acceptance criteria
+	•	Auth works end-to-end; protected /app/* redirects to login.
+	•	Dashboard shows live discoveries (SSE works).
+	•	Events table: fast filters, pagination, and deep linkable queries.
+	•	Watchlist & Portfolio persist to DB; estimates endpoint returns values.
+	•	Scanners run automatically; manual trigger works (admin).
+	•	All source links are clickable (EDGAR ix viewer, FDA pages, press releases).
+	•	Stripe checkout upgrades the plan; webhook updates DB.
+	•	No CORS or mixed-content issues; 0 errors in console.
+	•	Both processes run simultaneously in Replit (port 5000 and 8501). Provide a short README with “How to run”.
+
+Refactors to apply while wiring
+	•	Keep my existing Python services; wrap them, don’t rewrite logic.
+	•	Extract Pydantic schemas so the API is typed.
+	•	Centralize DB session management; avoid globals.
+	•	Log scanner exceptions; never crash the scheduler.
+
+Finally, run everything, seed data, and deliver:
+	1.	working Dev URL for the marketing site (5000)
+	2.	working FastAPI base URL (8501)
+	3.	credentials for a seeded demo user (email+password)
+	4.	brief README with run, env, and seed instructions.
+
+⸻
+
+If you want, I can also give you a shorter “delta” prompt to iterate only on the missing pieces (auth, SSE, and three endpoints).

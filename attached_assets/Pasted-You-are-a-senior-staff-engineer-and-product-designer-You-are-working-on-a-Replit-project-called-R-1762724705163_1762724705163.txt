@@ -1,0 +1,320 @@
+You are a senior staff engineer and product designer.
+
+You are working on a Replit project called "ReleaseRadar".
+
+Tech stack:
+- Python
+- Streamlit frontend
+- PostgreSQL via SQLAlchemy (database.py)
+- DataManager abstraction (data_manager.py)
+- EmailService (email_service.py)
+- SMS, payments, scanners, web scraping modules
+- Current seed data via JSON and ad-hoc sample inserts
+
+Goal:
+Refactor and redesign this codebase and UI so ReleaseRadar is a credible event-driven signal engine for active traders and small funds, not a toy or student dashboard.
+
+Do all work directly in this repo.
+
+=====================
+1. PRODUCT POSITIONING
+=====================
+
+Target positioning:
+
+"ReleaseRadar is an event-driven signal engine for active equity and biotech traders and small funds. It ingests SEC, FDA, and corporate events, maps them to tickers and subsidiaries, scores their likely impact based on structured rules (and later historical patterns), and delivers ranked, portfolio-centric alerts."
+
+Non-goals:
+- Do NOT be a generic news feed.
+- Do NOT claim HFT or sub-second latency.
+- Do NOT claim guaranteed alpha or give investment advice.
+
+Reflect this positioning consistently in:
+- Landing view copy
+- Page names
+- Help text
+- Emails
+
+=====================
+2. ARCHITECTURE CLEANUP
+=====================
+
+Unify and harden the backend. Use the existing modules as the backbone.
+
+Requirements:
+
+- Keep Python + PostgreSQL + SQLAlchemy.
+- Keep Streamlit as the UI shell, but:
+  - All business logic must live in backend modules.
+  - Streamlit pages should only orchestrate calls to backend functions.
+
+Use and refactor:
+
+- database.py:
+  - Ensure models are complete and aligned with the new schema below.
+  - Use proper types (DateTime for dates where appropriate).
+  - Keep SessionLocal / init_db patterns.
+- data_manager.py:
+  - Turn it into a clean repository/service layer.
+  - Remove "magic" initialization behavior in __init__ that seeds sample data on every instantiation.
+  - Add explicit seed/dev utilities instead.
+
+Remove JSON-based persistence (events.json, companies.json, watchlist.json) from runtime paths. They may only be used for one-time seeding, not as active storage.
+
+All configuration and secrets:
+- DATABASE_URL, SMTP, Twilio, Stripe, etc must be loaded from environment variables via a config module.
+- No secrets in code, no secrets printed in logs.
+
+=====================
+3. DATA MODEL (ENFORCE THIS)
+=====================
+
+Update models in database.py to match:
+
+Company:
+- id (int, PK)
+- ticker (str, unique, indexed, not null)
+- name (str, not null)
+- sector (str, nullable)
+- industry (str, nullable)
+- parent_id (int, FK to Company.id, nullable)  // for subsidiaries
+- tracked (bool, default True)
+- created_at, updated_at
+
+Event:
+- id (int, PK)
+- ticker (str, indexed, not null)
+- company_name (str, not null)
+- event_type (str, not null)        // 'earnings', 'sec_filing', 'fda', 'product_launch', 'guidance', 'corporate_action', etc
+- title (str, not null)
+- description (Text, nullable)
+- date (DateTime(timezone=True), not null)
+- source (str, not null)            // 'SEC', 'FDA', 'IR', 'Manual', etc
+- source_url (str, nullable)
+- impact_score (int, 0-100, default 50)
+- direction (str, nullable)         // 'positive', 'negative', 'neutral', 'uncertain'
+- confidence (Float, 0-1, default 0.5)
+- subsidiary_name (str, nullable)
+- sector (str, nullable)
+- created_at (DateTime)
+
+WatchlistItem:
+- id (int, PK)
+- user_id (int, nullable for now or 1 as default)
+- ticker (str, indexed)
+- notes (str, nullable)
+- created_at
+
+ScannerLog:
+- id (int, PK)
+- timestamp (DateTime, indexed)
+- scanner (str)
+- message (Text)
+- level (str) // 'info', 'error', etc
+
+User:
+- keep as in database.py, but ensure:
+  - bcrypt password hashing,
+  - no plaintext,
+  - optional 2FA hooks.
+
+VerificationCode:
+- keep, ensure expiry logic is enforced.
+
+Migrations:
+- Adjust existing tables in-place if needed for this environment.
+
+=====================
+4. IMPACT SCORING MODULE
+=====================
+
+Create a dedicated module, e.g. impact_scoring.py.
+
+It should export deterministic functions:
+
+- score_event(event_type, market_cap, sector, metadata) -> (impact_score, direction, confidence, rationale_str)
+
+Rules (no randomness):
+
+- High base scores:
+  - FDA approval / key AdCom / pivotal data
+  - Major guidance raise/cut
+  - Significant 8-K events (M&A, major customer loss, investigations)
+- Medium:
+  - Earnings with guidance or historical high volatility
+  - Major flagship product launches
+- Low:
+  - Routine 10-Q / 10-K with no flagged surprises
+  - Minor product updates
+
+Direction:
+- Use clear keyword and metadata rules:
+  - "approval", "beats", "raises guidance" -> positive
+  - "rejection", "misses", "SEC investigation", "delay", "recall" -> negative
+  - Unknown -> neutral/uncertain
+
+Return a short rationale string:
+- Example: "High impact: FDA approval event for small-cap biotech with history of >8% 1d moves."
+
+Wire this:
+- All scanners and manual event creation must call impact_scoring instead of hardcoding scores.
+- Store impact_score, direction, confidence, rationale in Event.
+
+Design impact_scoring so historical backtests can be slotted in later without changing the Event interface.
+
+=====================
+5. INGESTION & SCANNERS
+=====================
+
+Refactor scanner_service.py and related scrapers:
+
+Core rules:
+
+- Ingestion must be GLOBAL:
+  - Scanners run for a defined universe (e.g. all tracked companies or a coverage list).
+  - Do NOT couple ingestion to "favorites-only". Watchlists only affect what users SEE/alert on.
+
+- SEC scanner:
+  - Monitor relevant forms (8-K, 10-K, 10-Q, S-1, 13D/G, etc).
+  - Create Event rows only for material items (use simple filters and titles).
+  - Set source='SEC' and real source_url.
+
+- FDA scanner:
+  - Monitor FDA calendars and announcements.
+  - Classify into approval/rejection/AdCom/CRL/safety.
+  - Create Events with event_type='fda'.
+
+- Company releases:
+  - Provide a clean extension point for IR/PR RSS or HTML scraping.
+
+Implementation details:
+
+- Use APScheduler or equivalent for scheduling in one place.
+- All scanner code goes through a single DataManager or repository layer.
+- On insert:
+  - Check duplicates by (ticker, event_type, date, title) before adding.
+  - Get impact scoring from impact_scoring.py.
+- Log:
+  - Every run writes to ScannerLog with success/error details.
+
+=====================
+6. STREAMLIT UI REDESIGN
+=====================
+
+Replace any ad-hoc pages with a clean tabbed or multipage Streamlit app.
+
+Pages:
+
+1. "Events"
+   - Table: date/time, ticker, company, type, impact_score, direction, confidence, source.
+   - Filters:
+     - Date range
+     - Score range
+     - Direction
+     - Event type
+     - Sector
+     - Watchlist-only toggle
+   - Search: ticker or company.
+   - Row click / expander:
+     - full description,
+     - impact rationale,
+     - source_url button,
+     - subsidiary info.
+
+2. "Watchlist & Portfolio"
+   - Simple interface:
+     - Add/remove tickers.
+   - For each ticker:
+     - upcoming events,
+     - highest impact upcoming event.
+   - Use yfinance only if acceptable here, and clearly label any delay or limitations.
+
+3. "Companies"
+   - Table of companies:
+     - ticker, name, sector, tracked, next event date, number of events.
+   - Selecting a company:
+     - show full event timeline,
+     - show mapped subsidiaries / parent company.
+
+4. "Scanner Status"
+   - Read from ScannerLog.
+   - Show last run time per scanner.
+   - Show last message and error state.
+
+5. "Analytics" (Pro/Team)
+   - Basic metrics only:
+     - event counts by type and sector,
+     - distribution of impact_score.
+   - No fake performance promises.
+
+6. "Pricing & Account"
+   - Show Free vs Pro vs Team tiers.
+   - Integrate with existing Stripe payment_service module.
+   - Only minimal copy, clear and factual.
+   - If crypto support exists, keep it small and secondary.
+
+Design constraints:
+
+- Professional, dense, no emojis.
+- Color usage:
+  - green for positive,
+  - red for negative,
+  - neutral/gray for uncertain.
+- Use consistent typography, spacing, and layout.
+- No cluttered paragraphs in UI.
+
+=====================
+7. ALERTING
+=====================
+
+Use existing sms/email services (email_service.py, sms_service.py if present) to create an alert framework:
+
+- Per-user settings:
+  - minimum impact_score threshold,
+  - which event_types to alert on,
+  - preferred channels (email/SMS/in-app).
+
+- When a new event is written that matches:
+  - enqueue/send a concise alert.
+
+Keep it simple, robust, and opt-in.
+
+=====================
+8. SECURITY, COMPLIANCE, COPY
+=====================
+
+Enforce:
+
+- All auth:
+  - bcrypt for passwords,
+  - no plaintext.
+- No secrets in code.
+- Every page:
+  - small footer with:
+    - "Information only. Not investment advice. No performance guarantees. Always verify with original filings."
+
+- Event detail:
+  - always show source_url prominently.
+
+=====================
+9. CODE QUALITY
+=====================
+
+Do the following cleanups:
+
+- Remove unused code paths and debugging prints.
+- Remove JSON storage from production logic.
+- Type-hint public methods.
+- Add docstrings for:
+  - DataManager methods,
+  - scanner functions,
+  - impact_scoring functions.
+
+- Ensure:
+  - `main.py` or equivalent streamlit entrypoint runs end-to-end with a fresh database.
+  - On first run, seed a small realistic demo dataset via a clear, isolated seeding function, not inside hot paths.
+
+Implement all of this directly in this Replit project now so that:
+- The redesigned app runs,
+- The architecture matches this spec,
+- The UI feels like a focused, professional event-driven signal tool.

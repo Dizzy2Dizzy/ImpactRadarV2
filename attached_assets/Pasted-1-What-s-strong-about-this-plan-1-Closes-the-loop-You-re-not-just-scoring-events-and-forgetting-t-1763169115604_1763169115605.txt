@@ -1,0 +1,235 @@
+1. What’s strong about this plan
+	1.	Closes the loop
+You’re not just scoring events and forgetting them. You’re explicitly:
+	•	Logging predicted impact,
+	•	Logging realized price move,
+	•	Comparing them daily,
+	•	Using that to refine future scores.
+That’s how you move from “static expert rules” to an actual learning system.
+	2.	Respects your current model
+Keeping your existing scoring system as the base and using the AI as a “second opinion” is the right architecture:
+	•	It avoids an opaque black box suddenly taking over.
+	•	You can always fall back to deterministic rules if the model goes off the rails.
+	•	You can surface both to users (base vs adjusted).
+	3.	Phased rollout is realistic
+Your phases are sane:
+	•	Phase 1: log the data correctly (this is where most ML projects fail).
+	•	Phase 2: experiment with models offline.
+	•	Phase 3: show both scores in the UI.
+	•	Phase 4: move to periodic retraining + monitoring.
+That’s exactly the order it should happen.
+	4.	Explicit on risks
+You already called out:
+	•	Limited sample size (~650 events),
+	•	Regime shifts,
+	•	Data quality and user trust.
+Those are the real issues; you’re focused on the right problems.
+
+⸻
+
+2. Things you must get right
+
+2.1. Define the label precisely
+
+Right now you’re saying “what actually happened (stock price change).” This needs to be precise, or the model will learn garbage.
+
+You should define something like:
+	•	Horizon:
+	•	e.g. 1-day and 3-day abnormal returns after event.
+	•	Label(s):
+	•	Continuous: R = abnormal return (%).
+	•	Binary: did |R| exceed a threshold (e.g. 3%)?
+	•	Direction: sign(R) > 0 or < 0.
+
+And you must use:
+	•	Adjusted prices (split/dividend adjusted).
+	•	A benchmark (SPY or sector ETF) so you model abnormal reaction, not broad market moves.
+
+So Phase 1 should explicitly produce and store, per event:
+	•	realized_return_1d_abnormal
+	•	realized_return_3d_abnormal
+	•	maybe a few booleans like moved_gt_3pct_1d.
+
+Everything else depends on that being correct.
+
+2.2. 650 events is small: choose simple models
+
+With ~650 labeled examples, you cannot go wild with high-capacity models yet.
+
+Good options:
+	•	Logistic regression to predict:
+	•	P(|R| > T) (impact probability)
+	•	P(R > T) vs P(R < -T) (direction).
+	•	Regularized linear or small tree models with:
+	•	L2 regularization,
+	•	Strong feature selection.
+
+Use your existing score and group priors as features:
+	•	Input features:
+	•	Base impact_score, base direction.
+	•	Event type, sector (one-hot or embeddings).
+	•	Market cap bucket.
+	•	Pre-event volatility & trend (20-day vol, 20-day return).
+	•	Market regime indicator (e.g. VIX bucket, or SPY 20-day vol).
+
+Training target:
+	•	For example, label = 1 if |R| > 3%, else 0.
+
+Then have the AI layer learn a correction to the base model, not a completely new regime.
+
+2.3. Guardrails on the adjustment
+
+You don’t want the AI to occasionally swing a 30-impact event to 95 based on weak evidence.
+
+I’d explicitly cap its influence:
+	•	Let base_score be your current impact_score.
+	•	Let delta be the model’s suggested correction (e.g., -20…+20).
+	•	Compute:
+	•	ai_adjusted_score = clamp(base_score + w * delta, 0, 100)
+
+where:
+	•	w ∈ [0,1] depends on:
+	•	model confidence,
+	•	how much data you have for that feature regime,
+	•	calibration performance.
+
+Early on, keep w low (e.g. 0.3), so the AI can nudge, not override.
+
+And if:
+	•	Confidence is low,
+	•	Or the event is in a regime the model hasn’t seen (new type, new sector),
+
+then set w = 0 → fully defer to base score.
+
+⸻
+
+3. How I’d refine your phases
+
+Phase 1 – Data foundation
+
+You wrote:
+
+Add database tables to store “what actually happened” after each event
+Create a nightly job that captures stock price movements 1 day after events
+
+I’d refine this:
+	•	Add a new table, e.g. event_outcomes:
+	•	event_id
+	•	horizon_days (1, 3, maybe 5)
+	•	realized_return_raw
+	•	realized_return_abnormal
+	•	moved_gt_threshold (bool)
+	•	created_at
+	•	Each night:
+	•	For events whose horizon has just elapsed:
+	•	Fetch adjusted close prices for:
+	•	event day close,
+	•	event day + horizon close,
+	•	benchmark for both dates.
+	•	Compute abnormal return and store it.
+	•	Also log:
+	•	If price data is missing or incomplete.
+	•	If the ticker delisted or changed.
+
+This table becomes your training dataset.
+
+Phase 2 – Initial model
+
+You wrote:
+
+Train a machine learning model on historical event outcomes
+Test it against your backtesting data to verify it’s actually better
+
+Concretely:
+	•	Split your ~650 events:
+	•	Train: ~70%
+	•	Validation: ~15%
+	•	Test: ~15%
+	•	Evaluate basic metrics:
+	•	Brier score (for probabilistic predictions).
+	•	Calibration curves (do 70% predictions actually happen ~70% of the time?).
+	•	AUC for classification targets.
+
+You only accept the model if it:
+	•	Improves one or more metrics vs your base rule-based model.
+	•	Does not break calibration completely.
+
+Phase 3 – UI integration
+
+You wrote:
+
+Add “AI-adjusted impact score” alongside traditional scores
+
+I’d make the UI very explicit:
+	•	Show:
+	•	Base score: e.g. Base: 68
+	•	AI-adjusted: e.g. AI: 74
+	•	Delta: small badge +6 or –4
+	•	Confidence: bar or percentage.
+	•	Add copy like:
+“AI-adjusted impact score uses historical event outcomes to refine the baseline model. It is experimental and may change as the system learns.”
+
+And allow a toggle:
+	•	Per user or per event list view:
+	•	“Show AI-adjusted scores” on/off.
+
+That also helps you A/B audit performance and user preference.
+
+Phase 4 – Continuous learning
+
+Key parts:
+	•	Don’t retrain every night; weekly is more stable.
+	•	Implement:
+	•	A “model registry” or at least:
+	•	versioning for models (e.g. impact_model_v3),
+	•	logs of performance over time,
+	•	ability to roll back to previous version if a new one is worse.
+	•	Include a monitoring dashboard:
+	•	Rolling Brier score,
+	•	Rolling correlation of predicted vs realized impact,
+	•	Distribution shift indicators (e.g. change in feature distributions).
+
+If any metric degrades beyond a threshold:
+	•	Stop using the AI adjustments (set w=0),
+	•	Fall back to base scores,
+	•	Flag for manual investigation.
+
+⸻
+
+4. Trust and messaging
+
+You’re right that user trust is a risk. The way to handle it:
+	•	Clearly articulate in your docs and UI:
+	•	“Base score” = transparent, rules + historical group priors.
+	•	“AI-adjusted” = data-driven correction layer that learns over time.
+	•	Never hide the base score.
+	•	Never silently replace base with AI-only.
+
+If someone doesn’t trust ML, they can stick to the base model. If someone likes adaptive systems, they can focus on the adjusted one.
+
+⸻
+
+5. Bottom line
+
+The core idea is excellent and very aligned with what Release Radar wants to be:
+	•	You already have:
+	•	event data,
+	•	impact scores,
+	•	price history,
+	•	backtesting hooks.
+	•	You’re proposing the natural next layer:
+	•	“Did our forecast match reality? If not, what should we learn?”
+
+As long as you:
+	•	Define the label precisely (abnormal returns, fixed horizons),
+	•	Use simple, well-regularized models at your current data scale,
+	•	Put guardrails on how much AI can move scores,
+	•	Monitor performance and keep base scores visible,
+
+this is a real differentiator, not a gimmick.
+
+If you want, I can turn this into a Replit prompt that:
+	•	Adds the event_outcomes table,
+	•	Implements the nightly outcome job,
+	•	Trains a first-pass logistic model,
+	•	And wires an ai_adjusted_impact_score field into your events table with a safe blending function.

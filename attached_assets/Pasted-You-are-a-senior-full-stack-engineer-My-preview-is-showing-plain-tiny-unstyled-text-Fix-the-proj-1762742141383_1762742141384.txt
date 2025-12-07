@@ -1,0 +1,157 @@
+You are a senior full-stack engineer. My preview is showing plain, tiny, unstyled text. Fix the project so the Next.js + Tailwind marketing site actually serves styled pages, and the Streamlit app runs separately.
+
+What’s happening
+
+The preview is rendering without Tailwind (unstyled HTML).
+
+Likely causes: wrong run command (serving Streamlit instead of Next), missing globals.css import, wrong Tailwind content globs, or missing PostCSS/Tailwind config.
+
+Do this exactly
+
+Project layout
+
+Create two top-level folders and move files:
+
+marketing/ → all Next.js files (app/, components/, public/, package.json, tailwind.config.ts, postcss.config.js, next.config.js, tsconfig.json, any styles/globals.css).
+
+backend/ → all Python files (app.py, main.py, scanner_service.py, impact_scoring.py, database.py, data_manager.py, email_service.py, sms_service.py, etc.).
+
+Ensure there is no stray index.html at repo root (it can hijack the preview).
+
+Marketing package.json
+Replace marketing/package.json with:
+
+{
+  "name": "release-radar-marketing",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 5000",
+    "build": "next build",
+    "start": "next start -p 5000"
+  },
+  "dependencies": {
+    "next": "14.2.6",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwindcss": "^3.4.14",
+    "postcss": "^8.4.47",
+    "autoprefixer": "^10.4.20",
+    "framer-motion": "^11.0.0",
+    "lucide-react": "^0.453.0",
+    "clsx": "^2.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/react": "^18.3.8",
+    "@types/node": "^20.12.12"
+  }
+}
+
+
+Tailwind & CSS wiring
+
+Create marketing/tailwind.config.ts:
+
+import type { Config } from "tailwindcss"
+
+const config: Config = {
+  content: [
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}"
+  ],
+  theme: { extend: {} },
+  plugins: []
+}
+export default config
+
+
+Create marketing/postcss.config.js:
+
+module.exports = {
+  plugins: { tailwindcss: {}, autoprefixer: {} }
+}
+
+
+Ensure marketing/app/globals.css exists and contains:
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* optional global styles */
+html,body { min-height: 100%; }
+
+
+In marketing/app/layout.tsx, import the CSS at the very top:
+
+import "./globals.css";
+
+
+Next.js scaffolding checks (app router)
+
+marketing/app/page.tsx must export a component (hero, nav, etc.).
+
+Remove any old _app.tsx/_document.tsx from the app-router version.
+
+Replit run configuration
+
+Create or update .replit at the repo root:
+
+run = "cd marketing && npm i --force && npm run dev"
+
+
+If a Nix file exists that auto-runs Python/Streamlit, change it to do nothing on run; only the command above should start on the main “Run” button.
+
+Backend runner (separate tab/command)
+Add a Replit Shell command you can run manually:
+
+cd backend && streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+
+
+On the marketing homepage, set the CTA button “Open the App” to http://localhost:8501.
+
+Verification steps (automate and print to console)
+
+After install, print:
+
+Node & Next versions
+
+Confirm globals.css is imported (grep for import "./globals.css" in marketing/app/layout.tsx)
+
+Confirm Tailwind content globs match ./app/** and ./components/**
+
+Run npm run dev and verify the server logs show Next listening on port 5000.
+
+Load / and ensure classes like text-…, bg-…, grid, etc. are present in the HTML and rendered (not stripped).
+
+If still unstyled, force a rebuild: delete .next/ then npm run dev.
+
+Fix any remaining causes of “unstyled”
+
+If preview still shows plain text, check for:
+
+A conflicting static server (kill any process serving root index.html).
+
+CSS import path typos (case-sensitive).
+
+Missing globals.css due to wrong folder.
+
+Bad Tailwind content globs (must include marketing/app/** and marketing/components/**).
+
+Output for me
+
+Print a short checklist with ✅/❌ for:
+
+Correct folder structure
+
+Run config set to Next dev on port 5000
+
+Tailwind configs present
+
+globals.css imported
+
+Page renders with Tailwind classes
+
+Streamlit reachable at port 8501
+
+Make these changes now and start the marketing site.

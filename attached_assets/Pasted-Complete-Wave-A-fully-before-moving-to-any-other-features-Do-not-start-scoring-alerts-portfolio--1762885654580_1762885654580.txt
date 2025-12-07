@@ -1,0 +1,96 @@
+Complete Wave A fully before moving to any other features. Do not start scoring, alerts, portfolio, or WebSockets yet.
+
+Goal
+
+Refactor the event backtesting pipeline so it is correct, deterministic, test-covered, and invariant-safe.
+No UI redesign. No database restructuring. Just correctness + reliability.
+
+⸻
+
+Required Changes
+
+1. Refactor compute_stats()
+Replace the current behavior with a pure function that returns a structured contract:
+
+{
+  "action": "update" | "delete",
+  "payload": {
+    "ticker": str,
+    "event_type": str,
+    "sample_size": int,
+    "win_rate": float,
+    "avg_abs_move_1d": float,
+    "avg_abs_move_5d": float,
+    "avg_abs_move_20d": float,
+    "mean_move_1d": float,
+    "mean_move_5d": float,
+    "mean_move_20d": float
+  }
+}
+
+	•	No DB writes inside this function.
+	•	Caller decides whether to update or delete EventStats.
+
+2. Pipeline Invariants
+Document and enforce:
+
+IF price history is missing for any required return window,
+THEN do not create/update EventStats for that event_type/ticker pair.
+
+This should result in:
+	•	Graceful DELETE when data is insufficient
+	•	No silent partial stats
+	•	No stale stats
+
+3. Modify recompute_event_stats.py Job
+	•	For each (ticker, event_type), call compute_stats().
+	•	If action == "delete" → DELETE FROM event_stats WHERE ticker AND event_type.
+	•	If action == "update" → upsert with new stats.
+
+4. Add Integration Tests (tests/integration/test_event_stats.py)
+Test the following cases:
+
+Scenario	Expected Behavior
+Full price data available	EventStats row created and correct
+Missing price data around event date	No EventStats row created
+Price history partially present	EventStats is deleted, not partially computed
+Multiple events per ticker	Each computed independently
+Timezone or weekend-drift alignment	Returns computed using nearest trading day
+
+5. Add Sample Data Fixtures
+In tests/fixtures/price_history.csv include:
+	•	A ticker with full data
+	•	A ticker with missing windows
+	•	A ticker with earnings straddling weekends
+
+6. Minimal UI Update
+In the company events modal, add:
+
+Backend Status:
+- Stats Available ✅
+or
+- Insufficient Price Data ⚠️
+
+No charts, no styling overhaul.
+
+⸻
+
+Do Not Do
+	•	Do not begin dynamic scoring (Wave B)
+	•	Do not implement alerts (Wave C)
+	•	Do not implement portfolio insights (Wave D)
+	•	Do not implement WebSockets (Wave E)
+	•	Do not adjust pricing or frontend routing
+	•	Do not modify authentication or API key enforcement
+
+⸻
+
+Acceptance Criteria
+	•	Backtesting is now deterministic and correct across sparse data.
+	•	POST /analytics/recompute is idempotent (multiple runs produce identical DB).
+	•	Integration test suite passes with no flaky tests.
+	•	UI reflects whether stats exist, without throwing errors.
+
+⸻
+
+Once Wave A is complete and test-covered, request approval before starting Wave B.

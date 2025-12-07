@@ -1,0 +1,71 @@
+Update the Pricing to match the plan strategy below. Keep the current design system and routing. Only touch the marketing site.
+
+Plans (copy + features)
+
+Free — $0 forever
+	•	View all public events
+	•	Basic filtering & search
+	•	Watchlist (up to 3 tickers)
+	•	Delayed alerts (15-minute delay)
+	•	Read-only dashboard access
+
+Pro — $49/mo
+	•	Everything in Free
+	•	Real-time event feed (no delay)
+	•	Unlimited watchlists
+	•	Email & SMS alerts
+	•	Impact score + confidence filters
+	•	CSV/JSON export
+	•	API access (10k calls/mo) — Research tier
+	•	Priority computation lane
+	•	Email support
+
+Team — $199/mo
+	•	Everything in Pro
+	•	Up to 10 seats + team management
+	•	SSO (Google/OIDC)
+	•	Dedicated computation lane
+	•	API access (100k calls/mo)
+	•	Slack/Discord/Webhook alerts
+	•	Dedicated support + SLA
+
+Required UI changes
+	1.	In app/pricing/page.tsx (or wherever the pricing cards live), replace the plan bullets with the lists above.
+	2.	Add a 7-day free trial CTA on the Pro card: button label Start 7-day Free Trial. Wire to /signup?plan=pro&trial=7.
+	3.	Free card button = Get Started → /signup?plan=free.
+	4.	Team card button = Contact Sales → /contact?topic=team.
+	5.	Add a small note under Pro price: Billed monthly. Cancel anytime.
+	6.	Add tooltips for these terms:
+	•	Real-time event feed: “Events delivered without delay while markets are open.”
+	•	Priority/Dedicated computation lane: “Your scans are scheduled ahead of free users to reduce time-to-signal.”
+	•	API access (10k/100k calls): “Rate-limited requests per month across REST endpoints.”
+	7.	Add a compact comparison table below the cards that mirrors the features (✔ Free / ✔ Pro / ✔ Team). Keep it 2–3 columns, mobile-scrollable.
+	8.	Keep the current styling (dark, rounded, subtle outlines). Preserve accessibility and keyboard focus.
+
+Implementation details
+	•	Source of truth: create marketing/data/plans.ts exporting the three plans and a flat feature matrix used by both cards and the table.
+	•	Components to update (create if missing):
+	•	components/pricing/Plans.tsx (cards)
+	•	components/pricing/Comparison.tsx (table)
+	•	components/ui/Tooltip.tsx (reuse if already present)
+	•	Add simple plan types:
+
+export type PlanId = 'free' | 'pro' | 'team';
+
+
+	•	Add tests/smoke: render pricing page, ensure all bullet strings exist.
+
+Copy blocks (exact strings)
+	•	Page title: Pricing built for traders
+	•	Subtitle: Start free. Scale as you grow. No hidden fees, cancel anytime.
+	•	Pro badge: Most Popular
+
+Acceptance criteria
+	•	Pricing page builds with no TypeScript errors.
+	•	Cards show the exact bullets above.
+	•	Pro card shows Start 7-day Free Trial and links to /signup?plan=pro&trial=7.
+	•	Comparison table matches the cards.
+	•	Mobile layout stays readable and tappable.
+	•	Lighthouse a11y ≥ 90 on the pricing route.
+
+Do not change colors, spacing, or typography outside the pricing section.

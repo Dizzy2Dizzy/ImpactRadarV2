@@ -1,0 +1,117 @@
+You are a senior full-stack engineer. Fix the wrong source links and wrong dates shown in the “Companies Tracked → Events” modal. The bug: clicking an event’s “external link” sometimes goes to example.com/... or a mismatched article, and some event dates slip a day.
+
+What to do
+	1.	Trace the data flow end-to-end
+
+	•	Backend API: backend/api/main.py and any routers under backend/api/routes/*.
+	•	Models/DB: backend/api/models.py or schemas.py (adjust if names differ), and the DB layer (look for database.py, crud.py, or services/*).
+	•	Scanners/parsers: look for SEC/FDA/Press scrapers in backend/scanners/* or backend/services/* (search for “SEC”, “FDA”, “press”, “earnings”, “example.com”).
+	•	Frontend: Next.js components that render the modal, typically under marketing/app/(dashboard)/companies, marketing/components/events/*, or similar.
+
+	2.	Fix bad source URLs
+
+	•	Search the repo for any placeholder links:
+	•	example.com, example.org, placeholder, demo, /_dummy_, or hardcoded hostnames. Replace with the event’s canonical source URL from the scanner.
+	•	Ensure the event object persisted to DB has these fields (add if missing):
+
+id: string
+ticker: string
+title: string
+event_type: 'earnings'|'press_release'|'analyst_day'|...
+impact_score: number
+occurred_at: datetime  // tz-aware
+source_name: string    // e.g., 'Apple newsroom', 'SEC EDGAR'
+source_url: string     // canonical absolute URL
+
+
+	•	In each scanner:
+	•	Extract and store the final absolute URL (follow redirects once and use the resolved URL).
+	•	Never store relative paths.
+	•	Normalize with:
+	•	strip UTM params,
+	•	keep https,
+	•	urljoin(base, href) for any relative href.
+	•	Add a guard in save logic: reject any event whose source_url does not start with http:// or https://.
+	•	For demo/seed data, put the canonical links into the seed JSON. Do not use example.com. If you must keep demo mode, flag those events with is_demo: true and in the UI show a “Demo link” label and do not render the external-link icon.
+
+	3.	Fix date shifts (timezone)
+
+	•	In the backend, return ISO-8601 with timezone:
+
+# when serializing:
+occurred_at = occurred_at.astimezone(timezone.utc).isoformat()
+
+
+	•	In FastAPI response models (Pydantic), set:
+
+class Event(BaseModel):
+    occurred_at: datetime  # tz-aware
+    model_config = ConfigDict(json_encoders={datetime: lambda dt: dt.astimezone(timezone.utc).isoformat()})
+
+
+	•	In the Next.js client, parse safely:
+
+const dt = new Date(event.occurred_at); // already ISO with TZ
+const display = dt.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+
+Do not append “Z” or manually shift time. Remove any code that adds/subtracts days.
+
+	4.	Wire the UI to the right field
+
+	•	In the event card / modal component, ensure the external-link button uses event.source_url not event.url, event.link, or a computed fallback.
+
+const href = event.source_url;
+<a href={href} target="_blank" rel="noopener noreferrer" aria-label="Open source" />
+
+
+	•	If source_url is missing, hide the icon instead of linking to a placeholder.
+
+	5.	API shape and validation
+
+	•	Update the Events list endpoint (GET /api/events, GET /api/companies/:ticker/events) to always include source_url and occurred_at (ISO with TZ).
+	•	Add FastAPI/Pydantic validation so source_url must be a valid HttpUrl.
+	•	Add a DB migration (if needed) to add source_url, source_name, is_demo, and an index on (ticker, occurred_at DESC).
+
+	6.	Tests
+
+	•	Backend: unit test scanners normalize URLs, and API returns canonical source_url + TZ-aware occurred_at.
+	•	Frontend: a simple Playwright test clicks the external icon and asserts the link’s href matches the event’s source_url.
+
+Concrete edits (apply exactly)
+	•	Replace any example.com usages in scanners and seeds with canonical links.
+	•	In API serializer, force UTC ISO:
+
+# backend/api/utils/dates.py
+from datetime import timezone
+def to_iso_utc(dt): return dt.astimezone(timezone.utc).isoformat()
+
+Use this for occurred_at everywhere.
+
+	•	In the React event card:
+
+// components/events/EventRow.tsx
+const href = event.source_url?.startsWith('http') ? event.source_url : undefined;
+{href && (
+  <a href={href} target="_blank" rel="noopener noreferrer" className="...">
+    <ExternalLink className="h-4 w-4" />
+  </a>
+)}
+
+
+	•	In the fetch layer (SWR/React Query), type the model to require source_url: string.
+
+Acceptance criteria
+	•	No example.com links appear anywhere in UI or API.
+	•	Every event card opens the correct external article/filing in a new tab.
+	•	Dates in the modal match the source page date (no off-by-one).
+	•	/api/events returns occurred_at as TZ-aware ISO and source_url for every item.
+	•	Seed/demo items are clearly labeled and do not render an external link.
+	•	Add a quick script scripts/scan_bad_links.py that fails if any source_url does not start with http.
+
+Run plan:
+	1.	Search & replace placeholders; fix scanners; add URL normalization.
+	2.	Make API date/URL changes; run tests.
+	3.	Update frontend mapping; run the app and click several events (AAPL, ABBV) to confirm links and dates.
+	4.	Commit with message: “Fix event source_url + UTC dates; remove placeholders; UI uses canonical links.”
+
+⸻

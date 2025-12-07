@@ -1,0 +1,182 @@
+You are the repo’s lead engineer. Implement Wave F: Monetization, Enterprise Readiness, and Go-To-Market.
+Objective: make Release Radar profitable, sellable, and investor-friendly. Do not break Waves A–E.
+
+Scope
+
+Deliver five tracks in parallel:
+	1.	Trials, Billing, and Conversion
+	2.	Public Docs + SDKs (JS/Python)
+	3.	Org/Enterprise Features (SSO, roles, audit)
+	4.	Security/Compliance + SLA Monitoring
+	5.	Growth Loops (Case studies, SEO pages, referrals)
+
+Keep diffs focused. Add tests. Update docs.
+
+⸻
+
+1) Trials, Billing, and Conversion
+
+Backend (FastAPI, :8080)
+	•	Stripe integration hardening:
+	•	Add 14-day Pro trial flow: POST /billing/start-trial → creates Stripe customer + trial subscription; returns client_secret.
+	•	Enforce plan in JWT claims; add trial_ends_at to users.
+	•	Webhook: on customer.subscription.updated and invoice.payment_failed toggle plan (free|pro|team), revoke keys if needed.
+	•	Quota metering:
+	•	Introduce monthly usage meter per user and per org. Report to /metrics:
+	•	api_calls_monthly{plan=...}
+	•	alerts_sent_monthly{plan=...}
+	•	Paywall responses:
+	•	Standardize 402 responses: {error:"UPGRADE_REQUIRED", feature:"<feature>", plan_required:"pro|team"}
+	•	Tests: webhook signature verification, trial start/stop, upgrade/downgrade paths.
+
+Frontend (Next.js, :5000)
+	•	Pricing page:
+	•	“Start 14-day trial” button → Stripe flow. Show trial countdown in account page.
+	•	Feature gates:
+	•	Add inline CTAs where features are locked (scores, alerts>1 rule, portfolio insights export, API).
+	•	Onboarding modal (first login):
+	•	3-step: pick watchlist tickers → enable 1 default alert rule → upload sample portfolio CSV.
+
+Acceptance
+	•	Trial starts without card (configurable), auto-converts to paid on card add.
+	•	On trial end, Pro features lock gracefully; data preserved.
+	•	Metrics counters increment; tests pass.
+
+⸻
+
+2) Public Docs + SDKs
+
+Docs site
+	•	Generate a public docs site at /docs (marketing) with:
+	•	Quickstart (5 min) for API + SDKs.
+	•	Endpoints, errors, examples, rate limits, pagination.
+	•	Copy-to-clipboard cURL.
+	•	Add OpenAPI export at /openapi.json and render into docs.
+
+SDKs
+	•	JavaScript/TypeScript SDK (sdk/js):
+	•	getEvents, search, getScores, streamLiveEvents().
+	•	Fetch wrapper with retries, backoff, ETag caching.
+	•	Publish to npm (local step + README).
+	•	Python SDK (sdk/python):
+	•	Same surface; pip package structure with pyproject.toml.
+	•	Examples: Jupyter notebook showing backtest fetch + plotting.
+
+Examples
+	•	/examples folder:
+	•	Node script: “Alert on FDA >= 80 score”.
+	•	Python notebook: “Portfolio exposure in 7 days”.
+
+Acceptance
+	•	Docs build locally. SDKs install and run examples against dev API.
+	•	Link to docs from navbar. Lint + unit tests for SDKs.
+
+⸻
+
+3) Org / Enterprise Features
+
+Backend
+	•	Multi-user org model:
+	•	Tables: orgs, org_members(user_id, org_id, role), roles: owner|admin|analyst|viewer.
+	•	Usage aggregation per org for billing and metrics.
+	•	SSO:
+	•	Add OIDC/Google SSO for orgs. Endpoint /auth/oidc/*. Map email domain to org auto-join (owner-approved).
+	•	Audit log:
+	•	audit_logs(id, org_id, user_id, action, target, meta, created_at)
+Actions: login, api_key_rotate, alert_create, portfolio_upload, plan_change, rescore_job.
+	•	Export endpoint for admins.
+
+Frontend
+	•	Org settings: invite users, set roles, view usage, download audit log CSV.
+	•	Seat management: add/remove, display seat count vs plan.
+
+Acceptance
+	•	Owner invites user, user signs in via SSO, role limits are enforced (e.g., viewer: read-only).
+	•	Audit log records key actions; export works.
+
+⸻
+
+4) Security/Compliance + SLA Monitoring
+
+Security
+	•	Enforce CSP headers on marketing site; lock CORS to your domains.
+	•	API keys: rotate flow confirms once, show only on creation; mask elsewhere.
+	•	PII/data handling doc in SECURITY.md.
+	•	Add rate limit for login and alert creation endpoints.
+	•	Dependency scanning: add CI step for pip-audit and npm audit (non-blocking warnings; blocking for highs).
+
+SLA / Observability
+	•	Define SLOs:
+	•	“Event detection latency p95 < 90s”
+	•	“WebSocket delivery p95 < 1s after ingest”
+	•	/metrics additions:
+	•	event_detect_latency_seconds histogram (source-labeled).
+	•	ws_delivery_latency_seconds.
+	•	Alerting (internal):
+	•	If p95 detection > 120s for 10 min → raise internal alert (log + email to owner).
+
+Acceptance
+	•	CSP active; CORS restricted.
+	•	Metrics visible; induced delay test shows alert trigger.
+
+⸻
+
+5) Growth Loops (Case Studies, SEO, Referrals)
+
+Case Studies
+	•	Add /insights/* static pages with 3 case studies:
+	•	FDA approval → typical 1D/5D move
+	•	Earnings surprise pattern
+	•	Product launch impact by sector
+	•	Pull charts using Wave A stats. These pages are SEO-friendly.
+
+Referral
+	•	Simple referral codes:
+	•	referrals(id, ref_code, referrer_user_id, clicks, signups, conversions)
+	•	Append ?ref=CODE to signup URLs; attribute in DB.
+	•	Frontend: “Invite a friend → both get +7 trial days”.
+
+Acceptance
+	•	Case study pages render with real aggregated stats.
+	•	Referral links attribute correctly; trial extension applied on conversion.
+
+⸻
+
+Tests & CI
+	•	Add CI jobs:
+	•	billing_webhooks_test
+	•	sdk_js_test and sdk_py_test
+	•	security_audit (pip-audit, npm audit)
+	•	E2E:
+	•	Trial start → feature unlock → trial end lock.
+	•	Org invite via SSO; role enforcement on score endpoints and dashboard.
+
+⸻
+
+Documentation
+	•	Update README.md with:
+	•	Plans, trials, SDK install, SSO, audit, metrics endpoints, referral program.
+	•	Add /docs/changelog entries for Wave F.
+
+⸻
+
+Acceptance Criteria (Wave F)
+	•	Trials live; webhooks flip plans; paywalls consistent.
+	•	Public docs + OpenAPI + working JS/Python SDKs with examples.
+	•	Orgs, roles, SSO, audit logs functional.
+	•	CSP + CORS hardened; security audits wired.
+	•	SLA metrics collected; internal alert on detection latency breach.
+	•	Case studies live; referral tracking live.
+	•	All new tests pass in CI.
+
+Run after deployment
+
+# Back end
+cd backend && pytest -q
+# Front end
+cd marketing && npm run build
+# SDK checks
+cd sdk/js && npm test
+cd sdk/python && pytest -q
+
+

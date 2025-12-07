@@ -1,0 +1,115 @@
+1. Docs / “Learn Release Radar” page (page.tsx)
+
+What’s good
+	•	Clear structure: hero → quick start → sections by user type (trader, PM, quant, etc.).
+	•	Copy is specific to what Release Radar actually does (events, impact scores, scanners).
+	•	Visual hierarchy with icons, cards, 2-column grids – reads like Stripe/Vercel docs.
+	•	“Quick Start: Get running in 5 minutes” is exactly what new users want.
+
+What I’d improve
+	1.	It’s long – add navigation + anchors
+This reads like a full user manual. That’s fine, but add at the top:
+	•	A small in-page table of contents (links that scroll to ids on the page).
+	•	Section labels like “For traders”, “For PMs”, “For quants”.
+Otherwise people won’t realize you’ve already answered their questions further down.
+	2.	Separate “basic how-to” vs “power features”
+Right now quick start + advanced features are mixed. I’d:
+	•	Keep Quick Start very tight: 3–4 bullet steps with links (“Go to Events → …”).
+	•	Put all the deeper stuff in sections like:
+	•	“Power tools”
+	•	“Portfolio & risk”
+	•	“AI & diagnostics”
+	3.	Be careful with anything that sounds like advice
+Phrases that imply “we tell you what to trade” should be softened to:
+	•	“helps you analyze…”
+	•	“highlights events and risks…”
+	•	“provides estimates of impact and probability…”
+You already use this tone in most places; just make sure it’s consistent.
+	4.	Maintainability
+The page is one huge React component with a lot of inline JSX. Over time this will be painful to edit.
+I’d refactor into small components:
+	•	<QuickStart />
+	•	<TraderPlaybook />
+	•	<PMPlaybook />
+	•	<QuantPlaybook />
+Purely for your sanity later.
+
+⸻
+
+2. Security page (page (1).tsx)
+
+What’s good
+	•	Very clear promises: access control, secrets management, XSS, webhooks, logging, encryption.
+	•	Organized into cards with icons – feels like a real security marketing page.
+	•	You’re hitting the right topics: bcrypt, isolated tenants, no hardcoded secrets, CSRF, webhook signing, etc.
+
+Main risk: you use absolute language everywhere
+
+Lines like:
+	•	“All user data is strictly isolated.”
+	•	“Zero hardcoded secrets in our codebase.”
+	•	“Zero dangerouslySetInnerHTML usage.”
+	•	“Sensitive data is automatically redacted from logs.”
+
+These are only safe if they are literally true and enforced (and will remain true as you keep hacking on the project). That’s hard even for big teams.
+
+I’d change wording to slightly softer but still strong:
+	•	“User data is designed to be strictly isolated…”
+	•	“Secrets are stored in environment variables; we avoid hard-coding API keys.”
+	•	“We render event data as plain text and do not use raw HTML rendering.”
+	•	“We avoid logging sensitive fields and redact them in structured logs.”
+
+And at the top, add:
+	•	“Last updated: YYYY-MM-DD”
+	•	“Applies to the current Release Radar backend and dashboard.”
+
+So if you later change the implementation, you know to update this page.
+
+Also: make sure claims match your actual code:
+	•	If anything still uses SHA-256 for passwords, this page must not say bcrypt only.
+	•	If Stripe webhooks are not wired yet, say “Stripe webhooks are configured to validate signatures” only after it’s true.
+
+⸻
+
+3. Echo / “Market Echo” page (page (2).tsx)
+
+This one is genuinely good.
+
+Strengths
+	•	Storytelling is clear:
+	•	Phase 1: prediction
+	•	Phase 2: market reaction
+	•	Phase 3: learning
+	•	Phase 4: improved scores
+	•	Uses simple language for a non-quant:
+	•	“The market echoes back the answer”
+	•	“Learn from reality”
+	•	Fits the Release Radar brand perfectly and matches the ML design we discussed.
+
+What to tune
+	1.	Set expectations about what it is and isn’t
+Somewhere near the top, add a short block:
+“Market Echo is an experimental AI layer that adjusts impact scores based on how similar events have actually moved prices in the past. It does not execute trades or guarantee outcomes, and it never replaces the underlying event data.”
+	2.	Make base vs AI scores explicit
+In the copy, mention:
+	•	“You always see both the base impact score and the AI-adjusted score.”
+	•	“You can toggle AI adjustments on/off.”
+	•	“The AI can only nudge scores within a limited range based on its confidence.”
+That reinforces guardrails and builds trust.
+	3.	Avoid words that imply guaranteed performance
+Phrases like “beats static models” or “improves accuracy” should be backed by numbers or toned down to:
+	•	“is designed to improve calibration over time”
+	•	“helps highlight where the base model tends to over- or under-estimate impact”
+
+⸻
+
+4. Overall verdict
+	•	Visually and structurally, these pages are on the level of real fintech SaaS.
+	•	The biggest risk is over-claiming (security, AI performance) relative to what’s actually implemented and tested.
+	•	If you:
+	•	Soften absolute statements,
+	•	Tie claims directly to real code/behavior,
+	•	Add “last updated” and scope,
+	•	Break the huge docs page into maintainable components,
+
+then you can absolutely show this to investors or early users without it looking like a toy.

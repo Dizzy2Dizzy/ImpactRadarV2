@@ -1,0 +1,88 @@
+Replit prompt — Wave B (Dynamic Event Scoring)
+
+You are a senior backend + frontend engineer. Implement Dynamic Event Severity & Confidence Scoring on top of the current codebase. Do not alter pricing, auth, or quotas. Keep Wave A intact.
+
+Goals
+	•	Replace static impact with rule-based scoring + confidence.
+	•	Persist scores and rationales.
+	•	Expose API for UI + alerts to consume next.
+	•	Ship with tests and docs.
+
+Backend
+	1.	Models (Alembic migration)
+	•	Table: event_scores
+	•	id (pk), event_id (fk to events), ticker, event_type
+	•	base_score (int 0–100)
+	•	context_score (int −40..+40)
+	•	final_score (int 0–100, clamped)
+	•	confidence (int 0–100)
+	•	rationale (text, JSON or newline bullets)
+	•	computed_at (timestamp)
+	•	Unique index (event_id)
+	2.	Rule engine backend/analytics/scoring.py
+	•	Base score by event_type (seed config, editable):
+{"fda_approval":90,"product_launch":75,"earnings":65,"sec_8k":55,"guidance":70,"downgrade":40,"reg_investigation":25}
+	•	Context multipliers:
+	•	sector beta (low +0, med +5, high +10)
+	•	company volatility (ATR percentile: +0..+10)
+	•	proximity to earnings (inside ±3 trading days: +8)
+	•	market regime (SPY 10-day return quantile: −10..+10)
+	•	after-hours flag (+4)
+	•	duplicate/repeat event within 7d (−8)
+	•	Confidence: min of:
+	•	sample_size from event_stats mapping for (ticker,event_type) → cap 100 by quantile
+	•	source credibility (EDGAR/FDA 100, newsroom 85, third-party 70)
+	•	data completeness flag (100 if full, else 70)
+	•	Output contract:
+
+{
+  "base_score": int,
+  "context_score": int,
+  "final_score": int,   # clamp 0..100
+  "confidence": int,    # 0..100
+  "rationale": [ "Base=earnings(65)", "ATR p80 +6", "AH +4", "SPY weak −6" ]
+}
+
+
+	3.	Compute path
+	•	On event ingest/update and on a nightly job jobs/compute_event_scores.py:
+	•	Join with event_stats for (ticker,event_type) to fetch sample_size and average moves.
+	•	Compute score via rule engine.
+	•	Upsert into event_scores. Idempotent.
+	4.	API
+	•	GET /events/{id}/score → score object.
+	•	GET /events/scores?ticker=AAPL&limit=50 → recent event scores.
+	•	POST /analytics/rescore (admin) → recompute all; paginated batch.
+	•	Pydantic models; 200ms target with caching (60s in-memory).
+	5.	Tests
+	•	Unit tests for scoring math and clamping.
+	•	Integration tests:
+	•	Missing event_stats → lower confidence.
+	•	High ATR + high beta → higher context_score.
+	•	Recent duplicate event → penalty applied.
+	•	Idempotent upsert and batch recompute.
+	6.	Docs
+	•	docs/SCORING.md with formula, tunables, and examples.
+	•	Config file config/scoring.yml for base scores and weights. Load at startup; hot-reload off.
+
+Frontend (Next.js)
+	1.	Company modal / Events list
+	•	Replace “Impact” chip with:
+	•	Badge: Final score 0–100 (Low/Med/High bands at 0–49/50–74/75–100).
+	•	Tooltip: rationale bullets + confidence %.
+	2.	Sorting
+	•	Add “Sort by Score” in lists and dashboard.
+	3.	Status
+	•	If no score yet, show gray “Scoring…” state; never crash.
+
+Non-functional
+	•	Perf: cache GET /events/{id}/score 60s; batch routes 30s.
+	•	Safety: no external calls in request path; jobs fetch needed references ahead of time.
+	•	Observability: log scoring time and rule contributions for top 3 factors.
+
+Acceptance criteria
+	•	Scores compute on ingest and via job; upsert is idempotent.
+	•	/events/{id}/score returns {final_score, confidence, rationale} in <200ms warm.
+	•	UI shows badge + tooltip with confidence and rationale.
+	•	Tests pass; SCORING.md exists; weights live in config/scoring.yml.
+

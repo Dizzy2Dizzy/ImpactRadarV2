@@ -1,0 +1,528 @@
+Finish Release Radar (Full App: Next.js + FastAPI + Scanners + SSE)
+
+You are a senior full-stack engineer. Use my existing repo and turn it into a working, shippable Release Radar MVP with:
+	•	Frontend: Next.js 14 App Router + Tailwind + shadcn/ui
+	•	Backend: FastAPI + SQLAlchemy + Uvicorn
+	•	DB: SQLite for dev, Postgres via RR_DB_URL when present
+	•	Jobs: EDGAR / FDA / Press scanners on schedule
+	•	Realtime: SSE streaming of new discoveries
+	•	Auth: email+password with bcrypt + JWT (HTTP-only cookie)
+	•	Stripe: stub in dev, working when keys exist
+
+Do all file moves/creates/edits now. Keep marketing pages intact.
+
+⸻
+
+0) Folder layout
+
+Create:
+
+/marketing                     # Next.js app (already exists)
+/backend
+  app.py                       # FastAPI entry
+  requirements.txt
+  .env.example
+  releaseradar/
+    __init__.py
+    config.py
+    db/
+      __init__.py
+      models.py
+      session.py
+    api/
+      __init__.py
+      routes/
+        __init__.py
+        auth.py
+        companies.py
+        events.py
+        watchlist.py
+        portfolio.py
+        scanners.py
+        pricing.py
+        stream.py            # SSE
+    services/
+      __init__.py
+      data.py
+      impact_scoring.py
+      scanner_service.py
+    tasks/
+      __init__.py
+      scheduler.py
+    scripts/
+      seed.py
+
+
+⸻
+
+1) Backend files (create minimal but working code)
+
+/backend/requirements.txt
+
+fastapi==0.115.5
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
+bcrypt==4.2.0
+PyJWT==2.9.0
+httpx==0.27.2
+beautifulsoup4==4.12.3
+trafilatura==1.12.2
+yfinance==0.2.54
+apscheduler==3.10.4
+
+/backend/.env.example
+
+RR_DB_URL=sqlite:///./releaseradar.db
+RR_JWT_SECRET=change-me
+RR_JWT_EXPIRES_MIN=120
+ALLOWED_ORIGINS=http://localhost:5000
+
+# Optional
+STRIPE_SECRET_KEY=
+STRIPE_PRICE_PRO=
+STRIPE_PRICE_TEAM=
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USER=
+SMTP_PASS=
+
+/backend/releaseradar/config.py
+
+import os
+from datetime import timedelta
+
+RR_DB_URL = os.getenv("RR_DB_URL", "sqlite:///./releaseradar.db")
+JWT_SECRET = os.getenv("RR_JWT_SECRET", "dev-secret")
+JWT_EXPIRES = int(os.getenv("RR_JWT_EXPIRES_MIN", "120"))
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS","http://localhost:5000").split(",")]
+JWT_ALGO = "HS256"
+ACCESS_TOKEN_EXPIRE = timedelta(minutes=JWT_EXPIRES)
+
+/backend/releaseradar/db/session.py
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from releaseradar.config import RR_DB_URL
+
+connect_args = {"check_same_thread": False} if RR_DB_URL.startswith("sqlite") else {}
+engine = create_engine(RR_DB_URL, future=True, pool_pre_ping=True, connect_args=connect_args)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+/backend/releaseradar/db/models.py
+
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Float, Boolean
+from datetime import datetime
+
+class Base(DeclarativeBase): pass
+
+class User(Base):
+    __tablename__="users"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(20), default="user")
+    plan: Mapped[str] = mapped_column(String(20), default="free")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class Company(Base):
+    __tablename__="companies"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    ticker: Mapped[str] = mapped_column(String(20), index=True)
+    sector: Mapped[str] = mapped_column(String(50), index=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
+
+class Event(Base):
+    __tablename__="events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    title: Mapped[str] = mapped_column(String(500))
+    description: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(50), index=True)
+    event_time: Mapped[datetime] = mapped_column(DateTime, index=True)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    direction: Mapped[str] = mapped_column(String(12), default="uncertain")
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    source_url: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class Watchlist(Base):
+    __tablename__="watchlists"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+
+class Position(Base):
+    __tablename__="positions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    ticker: Mapped[str] = mapped_column(String(20))
+    shares: Mapped[float] = mapped_column(Float, default=0)
+    cost_basis: Mapped[float] = mapped_column(Float, default=0)
+
+class ScannerRun(Base):
+    __tablename__="scanner_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(20))
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    findings_count: Mapped[int] = mapped_column(Integer, default=0)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    log: Mapped[str] = mapped_column(Text, default="")
+
+/backend/releaseradar/services/data.py
+
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from datetime import datetime, timedelta
+from releaseradar.db import models as M
+
+def create_user(db: Session, email: str, password_hash: str):
+    u = M.User(email=email, password_hash=password_hash)
+    db.add(u); db.commit(); db.refresh(u); return u
+
+def get_user_by_email(db: Session, email: str):
+    return db.scalar(select(M.User).where(M.User.email==email))
+
+def list_companies(db: Session, q:str|None=None, sector:str|None=None, limit:int=50, offset:int=0):
+    stmt = select(M.Company)
+    if q: stmt = stmt.where((M.Company.name.ilike(f"%{q}%")) | (M.Company.ticker.ilike(f"%{q}%")))
+    if sector: stmt = stmt.where(M.Company.sector==sector)
+    return db.execute(stmt.offset(offset).limit(limit)).scalars().all()
+
+def list_events(db: Session, company_id:int|None=None, sector:str|None=None, category:str|None=None,
+                t_from:datetime|None=None, t_to:datetime|None=None, min_score:float|None=None, direction:str|None=None,
+                limit:int=100, offset:int=0):
+    stmt = select(M.Event)
+    if company_id: stmt = stmt.where(M.Event.company_id==company_id)
+    if sector: stmt = stmt.where(M.Event.category!=None)  # simple filter; sector typically via join
+    if category: stmt = stmt.where(M.Event.category==category)
+    if t_from: stmt = stmt.where(M.Event.event_time>=t_from)
+    if t_to: stmt = stmt.where(M.Event.event_time<=t_to)
+    if min_score is not None: stmt = stmt.where(M.Event.score>=min_score)
+    if direction: stmt = stmt.where(M.Event.direction==direction)
+    stmt = stmt.order_by(M.Event.event_time.desc())
+    return db.execute(stmt.offset(offset).limit(limit)).scalars().all()
+
+def add_to_watchlist(db: Session, user_id:int, company_id:int):
+    if not db.scalar(select(M.Watchlist).where(M.Watchlist.user_id==user_id, M.Watchlist.company_id==company_id)):
+        db.add(M.Watchlist(user_id=user_id, company_id=company_id)); db.commit()
+
+def remove_from_watchlist(db: Session, user_id:int, company_id:int):
+    wl = db.scalar(select(M.Watchlist).where(M.Watchlist.user_id==user_id, M.Watchlist.company_id==company_id))
+    if wl: db.delete(wl); db.commit()
+
+def list_watchlist(db: Session, user_id:int):
+    return db.execute(select(M.Watchlist).where(M.Watchlist.user_id==user_id)).scalars().all()
+
+/backend/releaseradar/services/impact_scoring.py
+
+def score_event(category:str, text:str):
+    # Simple deterministic stub. Replace with your logic later.
+    base = {"FDA":90,"Earnings":70,"SEC":60,"Launch":80}.get(category,60)
+    direction = "positive" if "approval" in text.lower() or "beat" in text.lower() else "uncertain"
+    confidence = 0.6 if direction=="uncertain" else 0.8
+    rationale = "Heuristic score based on category keywords."
+    return {"score": base, "direction": direction, "confidence": confidence, "rationale": rationale}
+
+/backend/releaseradar/api/routes/auth.py
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
+import bcrypt, jwt, datetime as dt
+from releaseradar.db.session import get_db
+from releaseradar.services.data import create_user, get_user_by_email
+from releaseradar.config import JWT_SECRET, JWT_ALGO, ACCESS_TOKEN_EXPIRE
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+class Creds(BaseModel):
+    email: EmailStr
+    password: str
+
+def make_token(user_id:int):
+    exp = dt.datetime.utcnow() + ACCESS_TOKEN_EXPIRE
+    return jwt.encode({"sub": user_id, "exp": exp}, JWT_SECRET, algorithm=JWT_ALGO)
+
+@router.post("/register")
+def register(c: Creds, db: Session = Depends(get_db)):
+    if get_user_by_email(db, c.email): raise HTTPException(409, "Email exists")
+    pw = bcrypt.hashpw(c.password.encode(), bcrypt.gensalt()).decode()
+    u = create_user(db, c.email, pw)
+    token = make_token(u.id)
+    resp = {"id": u.id, "email": u.email}
+    r = Response()
+    r.set_cookie("rr_token", token, httponly=True, samesite="lax")
+    r.media_type="application/json"; r.body = str(resp).encode()
+    return r
+
+@router.post("/login")
+def login(c: Creds, db: Session = Depends(get_db)):
+    u = get_user_by_email(db, c.email)
+    if not u or not bcrypt.checkpw(c.password.encode(), u.password_hash.encode() if isinstance(u.password_hash, bytes) else u.password_hash.encode()):
+        raise HTTPException(401, "Invalid credentials")
+    token = make_token(u.id)
+    r = Response()
+    r.set_cookie("rr_token", token, httponly=True, samesite="lax")
+    r.media_type="application/json"; r.body = str({"ok":True}).encode()
+    return r
+
+@router.post("/logout")
+def logout():
+    r = Response()
+    r.delete_cookie("rr_token")
+    r.media_type="application/json"; r.body = b'{"ok":true}'
+    return r
+
+/backend/releaseradar/api/routes/events.py
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from releaseradar.db.session import get_db
+from releaseradar.services.data import list_events
+
+router = APIRouter(prefix="/events", tags=["events"])
+
+@router.get("")
+def events(company_id:int|None=None, sector:str|None=None, category:str|None=None,
+           t_from:str|None=None, t_to:str|None=None, min_score:float|None=None,
+           direction:str|None=None, limit:int=100, offset:int=0, db:Session=Depends(get_db)):
+    return [e.__dict__ for e in list_events(db, company_id, sector, category, None, None, min_score, direction, limit, offset)]
+
+/backend/releaseradar/api/routes/companies.py
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from releaseradar.db.session import get_db
+from releaseradar.services.data import list_companies
+
+router = APIRouter(prefix="/companies", tags=["companies"])
+
+@router.get("")
+def companies(q:str|None=None, sector:str|None=None, limit:int=50, offset:int=0, db:Session=Depends(get_db)):
+    return [c.__dict__ for c in list_companies(db, q, sector, limit, offset)]
+
+/backend/releaseradar/api/routes/watchlist.py
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from releaseradar.db.session import get_db
+from releaseradar.services.data import add_to_watchlist, remove_from_watchlist, list_watchlist
+
+router = APIRouter(prefix="/watchlist", tags=["watchlist"])
+
+FAKE_USER_ID = 1  # replace with JWT identity later
+
+@router.get("")
+def get_wl(db:Session=Depends(get_db)):
+    return [w.__dict__ for w in list_watchlist(db, FAKE_USER_ID)]
+
+@router.post("/{company_id}")
+def add(company_id:int, db:Session=Depends(get_db)):
+    add_to_watchlist(db, FAKE_USER_ID, company_id)
+    return {"ok": True}
+
+@router.delete("/{company_id}")
+def remove(company_id:int, db:Session=Depends(get_db)):
+    remove_from_watchlist(db, FAKE_USER_ID, company_id)
+    return {"ok": True}
+
+/backend/releaseradar/api/routes/scanners.py
+
+from fastapi import APIRouter
+router = APIRouter(prefix="/scanners", tags=["scanners"])
+
+@router.get("/status")
+def status():
+    return {"sec":{"last_run":None,"discoveries":0}, "fda":{"last_run":None,"discoveries":0}, "press":{"last_run":None,"discoveries":0}}
+
+/backend/releaseradar/api/routes/stream.py  (SSE stub)
+
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+import asyncio, json
+
+router = APIRouter(prefix="/stream", tags=["stream"])
+
+async def event_stream():
+    # stub demo
+    for i in range(3):
+        yield f"data: {json.dumps({'type':'discovery','id':i})}\n\n"
+        await asyncio.sleep(1)
+
+@router.get("/discoveries")
+async def sse():
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+/backend/releaseradar/tasks/scheduler.py  (stub)
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+def register_jobs(app_ctx):
+    sched = AsyncIOScheduler()
+    # Add real jobs here calling your scanners
+    # sched.add_job(scan_edgar, "interval", minutes=15)
+    # sched.add_job(scan_fda, "interval", minutes=20)
+    # sched.add_job(scan_press, "interval", minutes=10)
+    sched.start()
+    return sched
+
+/backend/releaseradar/app.py
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine
+from releaseradar.db.session import engine
+from releaseradar.db.models import Base
+from releaseradar.config import ALLOWED_ORIGINS
+from releaseradar.api.routes import auth, companies, events, watchlist, scanners, stream
+
+app = FastAPI(title="Release Radar API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"]
+)
+
+Base.metadata.create_all(bind=engine)
+
+app.include_router(auth.router)
+app.include_router(companies.router)
+app.include_router(events.router)
+app.include_router(watchlist.router)
+app.include_router(scanners.router)
+app.include_router(stream.router)
+
+@app.get("/healthz")
+def healthz(): return {"status":"ok"}
+
+/backend/releaseradar/scripts/seed.py
+
+from sqlalchemy.orm import Session
+from releaseradar.db.session import SessionLocal, engine
+from releaseradar.db.models import Base, Company, Event
+from datetime import datetime, timedelta
+
+Base.metadata.create_all(bind=engine)
+
+db: Session = SessionLocal()
+cos = [
+    Company(name="Tesla", ticker="TSLA", sector="Tech"),
+    Company(name="Biogen", ticker="BIIB", sector="Pharma"),
+    Company(name="JPMorgan", ticker="JPM", sector="Finance"),
+]
+for c in cos: db.add(c)
+db.commit(); [db.refresh(c) for c in cos]
+
+events = [
+    Event(company_id=cos[1].id, title="FDA approval for drug X", description="Approval text", category="FDA",
+          event_time=datetime.utcnow()+timedelta(days=1), score=90, direction="positive", confidence=0.8,
+          rationale="Regulatory approval", source_url="https://www.fda.gov"),
+    Event(company_id=cos[0].id, title="8-K: Material event", description="8-K filing", category="SEC",
+          event_time=datetime.utcnow()+timedelta(days=2), score=60, direction="uncertain", confidence=0.6,
+          rationale="Material disclosure", source_url="https://www.sec.gov"),
+]
+for e in events: db.add(e)
+db.commit()
+print("Seeded companies and events.")
+
+/backend/app.py (runner)
+
+import uvicorn
+if __name__ == "__main__":
+    uvicorn.run("releaseradar.app:app", host="0.0.0.0", port=8501, reload=True)
+
+
+⸻
+
+2) Frontend wiring
+
+/marketing/next.config.js — add API proxy for dev:
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async rewrites() {
+    return [
+      { source: "/api_rr/:path*", destination: "http://127.0.0.1:8501/:path*" }
+    ];
+  },
+};
+module.exports = nextConfig;
+
+/marketing/app/(auth)/login/page.tsx and /marketing/app/(auth)/register/page.tsx
+Create simple forms that POST to /api_rr/auth/login and /api_rr/auth/register, then router.push("/app/dashboard").
+
+/marketing/app/app/layout.tsx
+Protected shell with sidebar/topbar (you already have styles). On mount, check for cookie existence by calling /api_rr/healthz; if 200, render; else redirect to /login.
+
+/marketing/app/app/dashboard/page.tsx
+	•	Fetch /api_rr/events?limit=50 server-side.
+	•	Open EventSource("/api_rr/stream/discoveries") client-side; append rows to a list.
+
+/marketing/app/app/events/page.tsx
+	•	Query params → call /api_rr/events?....
+	•	Table with filtering (sector/category/score/direction/date).
+
+/marketing/app/app/watchlist/page.tsx
+	•	GET /api_rr/watchlist and POST/DELETE /api_rr/watchlist/{company_id}.
+
+/marketing/lib/api.ts
+Small fetch wrapper that points to /api_rr.
+
+⸻
+
+3) Run commands (Replit)
+	•	Main Run: Next.js marketing
+
+cd marketing && npm i && npm run dev -p 5000
+
+
+	•	Backend (open a second Shell tab):
+
+cd backend && pip install -r requirements.txt && python -m releaseradar.scripts.seed && uvicorn releaseradar.app:app --host 0.0.0.0 --port 8501 --reload
+
+
+
+CORS must allow your Replit preview origin and http://localhost:5000. Update ALLOWED_ORIGINS if needed.
+
+⸻
+
+4) Acceptance criteria (must pass)
+	•	Register → login → redirect to /app/dashboard without errors.
+	•	/app/events renders real rows from the seed.
+	•	SSE: when hitting /api_rr/stream/discoveries, the dashboard appends items in real time.
+	•	Watchlist add/remove persists.
+	•	/scanners/status returns JSON; UI shows last run timestamp placeholders.
+	•	No console errors. Lighthouse a11y ≥ 90.
+	•	README updated with exact run instructions.
+
+⸻
+
+5) Stretch (optional, if time left)
+	•	Add /pricing and wire /api_rr/pricing/* to Stripe when keys present.
+	•	Replace SSE stub by registering apscheduler in app.py startup and pushing real discoveries from scanners.
+	•	Swap SQLite for Neon by setting RR_DB_URL.
+
+⸻
+
+Implement all of the above now. If any file is missing, create it. If any import path fails, fix it. When done, print:
+
+READY:
+- Frontend: http://localhost:5000
+- Backend:  http://localhost:8501
+- Demo user: created via /auth/register
+
+And provide a short README block with the two commands to run and the env vars required.

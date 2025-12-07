@@ -1,0 +1,62 @@
+[
+  {
+    "id": "1",
+    "ticker": "TTWO",
+    "company": "Take-Two Interactive",
+    "event_type": "Product Launch",
+    "title": "GTA 6 Release",
+    "description": "Rockstar Games (subsidiary) releasing Grand Theft Auto VI",
+    "date": "2025-10-15",
+    "impact_score": 95,
+    "source": "Manual Entry",
+    "subsidiary": "Rockstar Games"
+  },
+  {
+    "id": "2",
+    "ticker": "AAPL",
+    "company": "Apple Inc.",
+    "event_type": "Product Launch",
+    "title": "iPhone 17 Release",
+    "description": "Next generation iPhone launch expected",
+    "date": "2026-01-08",
+    "impact_score": 83,
+    "source": "Manual Entry",
+    "subsidiary": null
+  },
+  {
+    "id": "3",
+    "ticker": "NVDA",
+    "company": "NVIDIA Corporation",
+    "event_type": "Product Launch",
+    "title": "RTX 6090 GPU Launch",
+    "description": "Next-gen flagship gaming GPU release",
+    "date": "2025-12-20",
+    "impact_score": 78,
+    "source": "Manual Entry",
+    "subsidiary": null
+  },
+  {
+    "id": "4",
+    "ticker": "PFE",
+    "company": "Pfizer Inc.",
+    "event_type": "FDA Approval",
+    "title": "New Cancer Drug Approval Expected",
+    "description": "Phase III trial results pending FDA review",
+    "date": "2025-11-30",
+    "impact_score": 72,
+    "source": "FDA",
+    "subsidiary": null
+  },
+  {
+    "id": "5",
+    "ticker": "TSLA",
+    "company": "Tesla Inc.",
+    "event_type": "Earnings Report",
+    "title": "Q4 2025 Earnings",
+    "description": "Quarterly earnings and delivery numbers",
+    "date": "2025-11-25",
+    "impact_score": 68,
+    "source": "SEC",
+    "subsidiary": null
+  }
+]

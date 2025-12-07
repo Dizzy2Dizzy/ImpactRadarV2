@@ -1,0 +1,239 @@
+You’re an expert Python engineer and product-minded UX lead. I’ve uploaded a Streamlit-based project called ReleaseRadarBot. Key files and folders include:
+
+app.py (Streamlit UI), app_old.py
+
+main.py (entry), impact_scoring.py
+
+scanner_service.py, web_scraper.py, fix_fda_events.py, normalize_event_types.py
+
+data_manager.py, database.py, migrate_database.py, seed_database.py, populate_stocks.py
+
+auth_service.py, email_service.py, sms_service.py
+
+payment_service.py
+
+data/companies.json, data/events.json, data/watchlist.json
+
+.streamlit/config.toml, pyproject.toml, replit.md, AI_RULES.md, AUTH_SETUP_GUIDE.md
+
+Goal: Turn this into a production-grade, secure, maintainable app with a polished UX. Keep Streamlit for now, but modularize so we can later swap the UI for React. Do not remove current features; upgrade them.
+
+0) Housekeeping & Project Setup
+
+Create a clean Python 3.11 environment. Ensure pyproject.toml pins versions and includes:
+
+runtime: streamlit, sqlalchemy, psycopg[binary], alembic, pydantic, requests, beautifulsoup4, trafilatura, httpx, tenacity, yfinance, apscheduler, bcrypt, python-dotenv, loguru, structlog, email-validator.
+
+dev: pytest, pytest-asyncio, coverage, mypy, ruff, black, isort, types-requests, types-python-dateutil.
+
+Add pre-commit with hooks for ruff, black, isort, mypy.
+
+Create .env.example with all required secrets and config (DB URL, SMTP creds, Twilio, Stripe keys, allowed origins, SEC/FDA rate limits, caching toggles).
+
+Add a Makefile with common targets:
+
+make setup, make fmt, make lint, make typecheck, make test, make run, make seed, make migrate, make upgrade, make scrape, make scanners.
+
+1) Architecture Refactor (no breaking user features)
+
+Refactor to the following structure (adjust imports accordingly):
+
+releaseradar/
+  __init__.py
+  config.py            # Pydantic settings: env + sane defaults
+  logging.py           # loguru + structlog setup
+  db/
+    __init__.py
+    models.py          # SQLAlchemy models (Companies, Events, Users, Watchlist, etc.)
+    session.py         # engine + session + pooling
+    migrations/        # alembic
+  services/
+    auth.py            # bcrypt hashing, email & SMS verification
+    email.py
+    sms.py
+    payments.py        # Stripe; crypto integration behind an interface but disabled by default
+    impact.py          # wraps ImpactScorer with pure functions + tests
+    scanners/
+      __init__.py
+      sec.py           # robust EDGAR client w/ retry & backoff
+      fda.py
+      press.py
+    scraping/
+      fetch.py         # httpx client w/ UA, retry, robots.txt respect
+      parse.py         # trafilatura + bs4 parsers
+  domain/
+    events.py          # validation (pydantic models), dedupe/merge logic
+    scoring.py         # deterministic scoring → score, direction, confidence, rationale
+  ui/
+    streamlit_app.py   # replaces app.py (multi-page)
+    components.py      # reusable UI components, toasts, banners
+  tasks/
+    scheduler.py       # APScheduler jobs (scanners, housekeeping)
+  utils/
+    cache.py           # in-memory + on-disk caching (yfinance, HTTP)
+    rate_limit.py
+    errors.py
+  tests/
+    unit/
+    integration/
+
+
+Keep compatibility shims so old scripts (app.py, main.py) still launch but print a deprecation message and call the new entry (ui/streamlit_app.py).
+
+Replace any direct DB access in UI with service functions in services/*.
+
+Move the current ImpactScorer logic from impact_scoring.py into domain/scoring.py and expose a thin service in services/impact.py.
+
+2) Database & Migrations
+
+Convert existing schema in database.py/data_manager.py to SQLAlchemy 2.0 models in db/models.py with explicit types, constraints, and indexes:
+
+companies(id, name, ticker, sector, parent_id, created_at, updated_at, UNIQUE(ticker))
+
+events(id, company_id, title, description, event_type, source_url, announced_at, expected_at, created_at, updated_at, impact_score, direction, confidence, rationale, status, hash UNIQUE)
+
+users(id, email UNIQUE, password_hash, phone, is_verified_email, is_verified_phone, created_at, updated_at)
+
+watchlists(id, user_id, company_id, created_at, UNIQUE(user_id, company_id))
+
+Write Alembic migrations and seed scripts (make seed) to import data/*.json safely (idempotent, hash-based dedupe).
+
+Use pooled Postgres connections; config via env.
+
+3) Scanners & Scrapers (robust + safe)
+
+Build services/scanners/sec.py, fda.py, press.py:
+
+Use httpx with timeouts, retry/backoff (tenacity), per-domain rate limits.
+
+Normalize outputs into a Pydantic EventIn model with strong validation and a content_hash for dedupe.
+
+For SEC: prioritize 8-K, 10-Q, 10-K; support ixbrl links; extract company/ticker reliably; handle pagination and throttling.
+
+For FDA: support approvals, CRLs, safety alerts; map to company tickers.
+
+For press: maintain a curated list of official PR feeds/URLs per company.
+
+Centralize parsing in scraping/parse.py (Trafilatura + bs4), with unit tests on real-world snippets.
+
+Add APScheduler jobs in tasks/scheduler.py:
+
+every 5 min: priority re-check for bookmarked companies.
+
+every 30 min: general scan.
+
+daily: data hygiene (close stale expected events, recalc scores if taxonomy changed).
+
+4) Impact Scoring (deterministic, testable)
+
+Preserve your categories but make it pure & testable:
+
+Input: event_type, sector, textual cues, historical priors (optional), company beta/size buckets.
+
+Output: score (0-100), direction (pos/neg/neutral), confidence (0-1), rationale (str).
+
+Add unit tests covering FDA approval/rejection, earnings beat/miss, product launch/delay, regulatory investigations.
+
+5) Streamlit UX (professional)
+
+Convert to a multi-page Streamlit app:
+
+Dashboard: master events table (virtualized), multi-filter (sector, date range, company), quick actions, color-coded score pills (green/yellow/red).
+
+Companies: cards with next event, # of tracked events, bookmark star (writes to watchlist).
+
+Earnings / Portfolio: tickers, position sizes, latest price, upcoming event risk, “what-if” based on impact score.
+
+Scanners Status: health, last run, discoveries since last visit; expandable analysis.
+
+Pricing: Free / Pro / Team comparison, CTA buttons (wire to Stripe test mode, put crypto behind a feature flag and keep OFF).
+
+Account: email/SMS verification status, change password, 2FA (TOTP optional).
+
+Use st.cache_data/st.cache_resource prudently for yfinance & table data.
+
+Add non-blocking toasts/spinners, empty states, error banners, and rate-limit warnings.
+
+Add CSV export for filtered events, per-user.
+
+6) Security & Compliance
+
+Store passwords with bcrypt + per-user salt; enforce minimum complexity.
+
+Email verification tokens & SMS codes: 6 digits, 15-minute expiry, one-time use; lockout after 5 failed attempts.
+
+Secrets exclusively via env; never hard-code keys.
+
+Add input sanitization, length limits, and server-side validation for all forms.
+
+Stripe: implement test mode only, webhook signature verification, clear disclaimers (no investment advice).
+
+Log PII sparingly; add a redaction filter in logging.py.
+
+7) Performance & Reliability
+
+Add per-domain rate limiting + caching layer (utils/cache.py).
+
+YFinance: cache quotes for 15–30s during market hours; backoff on errors.
+
+Use event content_hash to prevent duplicates.
+
+Paginate all list views; lazy-load long tables.
+
+Add graceful fallbacks (e.g., if a scanner is down, show last successful timestamp and a retry button).
+
+8) Testing & CI
+
+Unit tests for:
+
+scoring, parsers, SEC/FDA adapters, dedupe, auth flows, email/SMS verification logic.
+
+Integration tests:
+
+DB migrations run, seed works, scanners produce normalized Event rows.
+
+Add GitHub Actions (or Replit CI) to run ruff, black, mypy, pytest --cov.
+
+Target coverage ≥80% for domain/ and services/.
+
+9) Observability
+
+Structured JSON logs (request_id, job_id, company_id, event_id).
+
+Simple metrics (counters & timings) printed as logs; later can route to Prometheus.
+
+Error notification hook (email on scanner job failure).
+
+10) Deliverables
+
+Working app launched from ui/streamlit_app.py (keep app.py as a thin wrapper calling it).
+
+Updated pyproject.toml, Makefile, .env.example, README.md with:
+
+local dev instructions
+
+how to run migrations/seeds
+
+how to run scanners/scheduler
+
+how to configure keys & rate limits
+
+Demo data seeded and a guided tour (Streamlit onboarding modal) on first run.
+
+A short SECURITY.md outlining secrets handling, auth, and data privacy.
+
+A ROADMAP.md with next steps (FastAPI API layer + React UI; broker integrations; backtest module for event impacts).
+
+11) Acceptance Criteria (check these before you stop)
+
+All pages render without exceptions; navigation is fast (<300ms UI actions for cached data).
+
+Scanners run from the scheduler without blocking the UI; dedupe works (no duplicate events on repeated runs).
+
+Creating an account, verifying email/SMS, logging in/out, bookmarking companies all work.
+
+Impact scoring returns stable results with tests passing.
+
+Linting, typing, and tests pass in CI; coverage report ≥80% for core logic.
+
+Please implement these changes directly, migrate the code into the new structure, fix broken imports, and leave clear TODOs where external credentials are needed. When complete, run smoke tests (make run, make scanners, make seed, make test) and share a brief summary of changes and any notable trade-offs you made.

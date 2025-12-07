@@ -1,0 +1,277 @@
+You are a senior full-stack engineer and data engineer.
+Extend the existing Release Radar Next.js + Python backend to add a new dashboard tab that analyzes event-driven investing chatter from X.com (Twitter) and links it to our existing events and tickers.
+
+Legal / data-source constraints (very important)
+	•	Do NOT scrape HTML or bypass X.com’s protections.
+Only use:
+	•	The official X API (v2 or newer) with my API keys, OR
+	•	A compliant third-party data provider I plug in via API.
+	•	Do not generate fake or invented tweets.
+All posts shown must come from real API responses.
+	•	Build everything so that if no X credentials are configured, the UI still loads but shows a “Connect X data source” empty state.
+
+1. New route + navigation
+	1.	Add a new tab in the left dashboard navigation, immediately after “Account”:
+	•	Label: “X.com (Twitter) Scrape”
+	•	Route: /x-feed (or similar – keep consistent with the app router).
+	2.	Clicking it should open a full page in the existing dashboard shell with:
+	•	Title: X.com Event Sentiment
+	•	Subtitle: Event-driven chatter from X.com linked to Release Radar events.
+	•	Same header / breadcrumbs as other tabs.
+
+2. Backend integration with X / social-data provider
+
+Create a new backend module (Python):
+	•	backend/social/x_client.py
+
+Responsibilities:
+	1.	Wrap calls to X API or social-data provider:
+	•	A generic function:
+
+def fetch_posts_for_tickers(
+    tickers: list[str],
+    since: datetime | None = None,
+    until: datetime | None = None,
+    max_results: int = 500,
+) -> list[SocialPost]:
+    ...
+
+
+	•	SocialPost dataclass:
+
+@dataclass
+class SocialPost:
+    id: str
+    created_at: datetime
+    text: str
+    author_handle: str
+    author_followers: int | None
+    like_count: int | None
+    retweet_count: int | None
+    reply_count: int | None
+    quote_count: int | None
+    symbols: list[str]      # detected tickers like AAPL, TSLA
+    url: str                # direct link to the post
+
+
+	2.	Use environment variables for API credentials:
+	•	e.g. X_API_KEY, X_API_SECRET, X_BEARER_TOKEN.
+	•	If they are missing:
+	•	Do not call X.
+	•	Return an empty list and set a flag source_available=False.
+	3.	Implement basic rate-limit handling:
+	•	If the API returns a rate-limit error, log it and return a structured error to the frontend.
+	•	Do not crash the dashboard.
+
+3. NLP layer: classify and score posts
+
+Create backend/social/x_sentiment.py:
+	1.	For each SocialPost, compute:
+	•	sentiment ∈ { “bullish”, “bearish”, “neutral” }
+	•	strength in [0, 1] – how strong the sentiment is.
+	•	event_hint – simple classification of what the post refers to (e.g. "earnings", "fda", "guidance", "macro", "other"). Use keyword rules to start; later we can plug in an LLM.
+	2.	Use whatever text-classification stack is easiest in this project (Hugging Face model, OpenAI API, or your existing LLM call wrapper). Keep it modular:
+
+@dataclass
+class PostAnalysis:
+    sentiment: str
+    strength: float
+    event_hint: str
+    confidence: float
+
+
+	3.	Provide a helper:
+
+def analyze_posts(posts: list[SocialPost]) -> dict[str, PostAnalysis]:
+    ...
+
+returning a mapping post_id → PostAnalysis.
+
+4. Link posts to existing events
+
+Add backend/social/x_event_linker.py:
+	1.	We already have an events table in the DB with fields like:
+	•	id
+	•	ticker
+	•	event_type
+	•	event_date
+	•	source_url
+	2.	Implement a function:
+
+def link_posts_to_events(
+    posts: list[SocialPost],
+    analyses: dict[str, PostAnalysis],
+    events: list[Event],
+    window_days: int = 3,
+) -> list[XEventCluster]:
+
+where:
+
+@dataclass
+class XEventCluster:
+    event: Event | None        # None = no matching event yet
+    ticker: str
+    posts: list[SocialPost]
+    sentiment_summary: dict    # aggregated metrics
+
+
+	3.	Linking logic:
+	•	For each post, for each detected symbol:
+	•	Find events in the DB for that ticker where:
+	•	|post.created_at - event.event_date| <= window_days
+	•	And where event_type roughly matches event_hint (if we have that metadata).
+	•	If one or more events match, attach the post to the closest in time.
+	•	If no event matches, create a cluster with event=None but keep the ticker and posts. This represents “social chatter without confirmed event yet.”
+	4.	For each XEventCluster, compute aggregated sentiment:
+	•	Weighted average sentiment score:
+	•	Map bullish → +1, bearish → -1, neutral → 0.
+	•	Weight posts by log(1 + author_followers) and engagement (likes + retweets + replies).
+	•	Compute:
+
+sentiment_score  # in [-1, +1]
+sentiment_label  # "bullish", "bearish", "mixed", "neutral"
+support_count    # number of posts
+
+
+	•	Also compute a confidence in [0,1] based on:
+	•	number of posts,
+	•	diversity of authors,
+	•	agreement level (low variance → higher confidence).
+
+5. Expose an API endpoint for the frontend
+
+Create a Next.js API route under marketing app:
+	•	e.g. /api/x-feed
+
+This endpoint should:
+	1.	Accept query parameters:
+	•	tickers (comma-separated) – if omitted, use the user’s watchlist tickers.
+	•	days – how many days back to look (default 3–7 days).
+	2.	On request:
+	•	Get tickers (from watchlist or query).
+	•	Fetch events from the backend DB for those tickers over the time window.
+	•	Call fetch_posts_for_tickers.
+	•	Run analyze_posts and link_posts_to_events.
+	•	Return JSON like:
+
+[
+  {
+    "event": { ... } | null,
+    "ticker": "AAPL",
+    "sentiment_label": "bullish",
+    "sentiment_score": 0.72,
+    "confidence": 0.64,
+    "support_count": 18,
+    "posts": [
+      {
+        "id": "...",
+        "created_at": "...",
+        "author_handle": "...",
+        "text": "...",
+        "url": "...",
+        "sentiment": "bullish",
+        "strength": 0.9
+      }
+    ]
+  }
+]
+
+
+	3.	If X credentials are missing, respond with:
+	•	HTTP 200, { "source_available": false, "clusters": [] }.
+
+6. Frontend UI for “X.com (Twitter) Scrape” tab
+
+In the Next.js app (marketing app):
+	•	Create app/x-feed/page.tsx:
+Layout:
+	•	Left controls:
+	•	Multi-select of tickers (default = user’s watchlist).
+	•	Time range selector: 1d, 3d, 7d, 30d.
+	•	Filter by sentiment: All / Bullish / Bearish / Neutral.
+	•	Main content: a list of Event sentiment cards, each representing one XEventCluster.
+
+Card design:
+	•	Header:
+	•	Ticker (e.g. AAPL), company name.
+	•	If event != null:
+	•	Event title (e.g. “Q3 2025 Earnings Call”).
+	•	Event date/time.
+	•	A badge linking to the existing Event detail view.
+	•	If event == null:
+	•	Label: “No confirmed event – social chatter only.”
+	•	Sentiment summary:
+	•	Chip: "Bullish", "Bearish", "Mixed", or "Neutral".
+	•	Score bar: map sentiment_score [-1,+1] → 0–100.
+	•	Confidence % (0–100) with tooltip explaining how it’s computed.
+	•	support_count posts.
+	•	Posts list (collapsible):
+	•	Show top 3–5 posts by engagement.
+	•	For each:
+	•	Author handle, follower count (approx).
+	•	Post text, truncated with “Read more”.
+	•	Link icon to open the post on X.com in a new tab.
+	•	Small sentiment tag per post.
+
+Empty states:
+	•	If source_available == false:
+	•	Show a friendly panel: “Connect an X.com data source to see social sentiment. No credentials are configured.”
+	•	If there are simply no posts:
+	•	Show: “No recent X.com posts for these tickers in the selected window.”
+
+7. Safety, disclaimers, and UX copy
+	•	Add a clear banner at the top of the X.com tab:
+“X.com posts are user-generated content and may be inaccurate, biased, or manipulative. This analysis is informational only and not investment advice.”
+	•	Filter posts:
+	•	Remove obvious spam (empty text, repeated URLs).
+	•	Only show posts in English for now (language filter).
+	•	If your text classifier detects hate or NSFW content, do not show those posts.
+	•	Do not ever treat X.com sentiment as a direct trading signal; it should appear as one signal beside your fundamental event impact scores.
+
+
+When you’ve implemented this, print a summary with:
+	•	whether X API credentials are detected,
+	•	how many posts were fetched for a sample ticker,
+	•	and one example of an XEventCluster used in the UI.
+
+
+Ideas for using investing advice from X.com in Release Radar
+
+Here are extensions you can consider after the basic tab works:
+	1.	Pre-event buzz detector
+	•	Track X.com sentiment before a scheduled event (earnings, FDA decision).
+	•	Show a small “Buzz” indicator on the Events tab:
+	•	e.g. “Pre-event buzz: HIGH, mostly bullish (score 0.8, 34 posts).”
+	•	This helps users see when retail/social attention is clustering around an upcoming catalyst.
+	2.	Consensus vs model divergence
+	•	Compare your model-based impact score with social sentiment:
+	•	If your model is neutral but X.com is strongly bullish: flag as “social divergence.”
+	•	If your model is high-impact negative but social is euphoric: potential risk of disappointment.
+	•	Add a column in the Events table: “X Sentiment vs Model” with labels like “Aligned”, “Opposite”, “No signal”.
+	3.	Watchlist sentiment heatmap
+	•	For every ticker in a user’s watchlist:
+	•	Aggregate X.com sentiment over the last 24–72 hours.
+	•	Show a small heatmap or bar (red → green) in the Watchlist tab.
+	•	This gives a quick “social mood” snapshot per position.
+	4.	Influencer tracking (later, and carefully)
+	•	Identify accounts that frequently post about certain tickers/events.
+	•	Track their historical accuracy vs realized moves (did their bullish calls actually precede positive abnormal returns?).
+	•	Weight their posts more heavily in your sentiment confidence.
+	•	Do NOT present this as “this person is a good trader” – present it as “historical correlation info”, with disclaimers.
+	5.	Post-event reaction timeline
+	•	For each major event, show:
+	•	Pre-event social sentiment,
+	•	Post-event social sentiment shift,
+	•	Price reaction curve.
+	•	This becomes a mini “event case study” inside the event detail page.
+	6.	Alerting
+	•	Aallow users to set alerts in the Alerts tab like:
+	•	“Notify me when X.com sentiment for any of my watchlist tickers moves from neutral to strongly bearish within 12 hours.”
+	•	These alerts must be clearly labeled as sentiment-based, noisy signals, not direct trade recommendations.
+	7.	Research mode for you
+	•	Add a hidden/internal route that shows raw sentiment diagnostics:
+	•	distribution of sentiments per event type,
+	•	how often X.com sentiment is directionally correct vs your impact model,
+	•	potential biases (e.g. always bullish on certain names).
+	•	Use this to calibrate how much weight social data deserves in the overall impact score (probably as a separate “social factor,” not the main driver).
+

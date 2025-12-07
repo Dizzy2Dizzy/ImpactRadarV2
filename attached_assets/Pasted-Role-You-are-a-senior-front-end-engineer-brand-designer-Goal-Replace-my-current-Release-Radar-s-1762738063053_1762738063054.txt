@@ -1,0 +1,308 @@
+Role: You are a senior front-end engineer + brand designer.
+Goal: Replace my current Release Radar site with a polished, Dyad-like marketing site. Prioritize world-class visual design, speed, accessibility, and conversion. Build a static marketing site (not the Streamlit app) that links to the app.
+
+0) Tech & quality bar
+
+Framework: Next.js 14 (App Router).
+
+Styling: Tailwind CSS + CSS variables.
+
+UI kit: shadcn/ui (install only what’s used).
+
+Icons: lucide-react.
+
+Animations: framer-motion (subtle; no heavy parallax).
+
+Fonts: Inter for UI; Space Grotesk for headings (use next/font/google).
+
+Images: next/image with blur placeholders; SVG wherever possible.
+
+Analytics: Add lightweight Plausible (placeholder domain releaseradar.ai).
+
+A11y: Passes Lighthouse a11y ≥ 95; keyboard navigable; focus-visible rings.
+
+Perf: Lighthouse Performance ≥ 95 (optimize images, code-split, preconnect).
+
+1) Brand system (Dyad-adjacent, not identical)
+
+Color tokens:
+
+--bg: #0B0F14 (nearly-black)
+
+--panel: #11161D
+
+--text: #EAF0F7
+
+--muted: #9FB2C7
+
+--primary: #7C9EFF (indigo-blue)
+
+--primary-contrast: #0A1A3A
+
+--accent: #00E0A4
+
+--danger: #FF5D5D
+
+Elevation: soft shadows, 2xl rounded corners, 1px hairline borders with rgba(255,255,255,0.06).
+
+Motion: 150–250ms ease-out, subtle hover scale/translate, fade/slide on section reveal.
+
+2) Site map & routing
+
+/ Home (hero, social proof, product sections, CTA)
+
+/product Deep feature tour (Event Tracking, Impact Scores, Scanners, Portfolio)
+
+/pricing 3 tiers (Free, Pro, Team) with FAQ + stripe checkout links (placeholders)
+
+/docs Quickstart + API (placeholder MDX pages)
+
+/security (auth + data practices)
+
+/contact (email form to hello@releaseradar.ai, just log to console for now)
+
+/changelog (MDX powered)
+
+/legal/privacy and /legal/terms (seeded content)
+
+3) Navigation & layout
+
+Top nav: logo (two overlapping bold “R” monograms), links (Product, Pricing, Docs, Security), “Open App” (primary button), theme-friendly sticky with blur backdrop.
+
+Footer: 4 columns (Product, Company, Resources, Legal), newsletter input, social icons.
+
+4) Homepage sections (content provided—rewrite microcopy but keep meaning)
+
+Hero
+
+Headline: “Market-moving events, tracked to the second.”
+
+Subhead: “Release Radar aggregates SEC, FDA, and company releases into a single, actionable dashboard with deterministic impact scoring.”
+
+Primary CTA: “Open the App” (link /app placeholder). Secondary CTA: “See Live Demo.”
+
+Right side: product mockup (replaceable), animated cards “slide in”.
+
+Event Tracking
+
+Copy: “Track 500+ events across 150+ companies. Filter by sector, company, and category.”
+
+Feature bullets with mini-cards: Event title/date, impact score chip, sentiment arrow.
+
+Impact Scoring
+
+Copy: “Deterministic, explainable scores (0-100) with direction & confidence.”
+
+Visual: score dial + rationale tooltip; red/green chips; show FDA/8-K examples.
+
+Scanners (SEC, FDA, Company)
+
+Copy: “Multi-source ingestion with AI summaries & links to originals.”
+
+Visual: 3 status cards with ‘last run’ timestamps and discovery counts.
+
+Portfolio / Earnings
+
+Copy: “See potential P&L impact before events land.”
+
+Visual: simple chart + positions list (placeholder data).
+
+Bookmarked companies
+
+Copy: “Prioritize monitoring only the companies you care about.”
+
+Pricing teaser + link to /pricing.
+
+Security & trust (bcrypt, 2-step verify, sessions) + badge row.
+
+Final CTA block.
+
+5) Components to implement
+
+components/Header.tsx sticky nav with mobile drawer.
+
+components/Hero.tsx with framer-motion entrance and CTA buttons.
+
+components/ScoreChip.tsx (0–100 with color bands; ARIA labels).
+
+components/EventCard.tsx (title, date, company, category, ScoreChip, “view source” link).
+
+components/ScannerStatus.tsx (name, last run, discoveries, status dot).
+
+components/Logo.tsx (SVG “RR” monogram).
+
+components/Section.tsx wrapper with max-w and reveal on view.
+
+components/PricingTable.tsx 3 cards; monthly toggle; CTA buttons.
+
+components/FAQ.tsx collapsible list using shadcn Accordion.
+
+app/(marketing)/layout.tsx shared layout (metadata, fonts, analytics).
+
+app/_components/MarkdownProse.tsx for MDX docs styling.
+
+6) Copy blocks (use these as placeholders)
+
+Free: “Track public events and browse the dashboard.”
+
+Pro: “Unlimited bookmarks, scanner prioritization, email/SMS alerts, export.”
+
+Team: “Seats, SSO (placeholder), priority scanners, API quota.”
+
+Security page: outline hashing (bcrypt+salt), email/SMS verify, session security; no sensitive investor data stored beyond auth and preferences.
+
+7) SEO & meta
+
+Add Open Graph images, canonical, robots, sitemap.
+
+Use next-seo or Next.js Metadata API.
+
+Titles ≤ 60 chars; meta descriptions ≤ 155 chars.
+
+Structured data: Product + FAQ JSON-LD on relevant pages.
+
+8) Implementation details
+
+Create a design tokens file (/app/styles/tokens.css) setting the CSS variables above; hook Tailwind to them.
+
+Configure Tailwind: container centered with 2xl max-width, custom shadows, and color palette that maps to CSS vars.
+
+Reusable grid system for sections (12-col at xl, stack on mobile).
+
+Add a Changelog powered by MDX files under /content/changelog/*.mdx with date, title, and tags.
+
+9) Example code (use as baseline style)
+
+components/Hero.tsx
+
+"use client";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import Image from "next/image";
+
+export default function Hero() {
+  return (
+    <section className="relative overflow-hidden">
+      <div className="mx-auto max-w-7xl px-6 py-24 lg:py-32 grid lg:grid-cols-12 gap-10 items-center">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          viewport={{ once: true }}
+          className="lg:col-span-6"
+        >
+          <h1 className="text-4xl/tight md:text-6xl font-semibold tracking-tight text-[--text]">
+            Market-moving events, <span className="text-[--primary]">tracked to the second</span>.
+          </h1>
+          <p className="mt-5 text-lg text-[--muted] max-w-xl">
+            Release Radar aggregates SEC, FDA, and company announcements into a single
+            dashboard with deterministic impact scoring and actionable alerts.
+          </p>
+          <div className="mt-8 flex gap-4">
+            <Button className="bg-[--primary] hover:bg-[--primary-contrast] text-black">
+              Open the App
+            </Button>
+            <Button variant="outline" className="border-white/10 text-[--text]">
+              See Live Demo
+            </Button>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.05 }}
+          viewport={{ once: true }}
+          className="lg:col-span-6"
+        >
+          <div className="relative rounded-3xl border border-white/10 bg-[--panel] p-3 shadow-2xl">
+            <Image
+              src="/mockups/dashboard.png"
+              alt="Release Radar dashboard"
+              width={1200}
+              height={800}
+              className="rounded-2xl"
+              priority
+            />
+            <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-white/5" />
+          </div>
+        </motion.div>
+      </div>
+      <div className="absolute -top-20 -left-20 h-72 w-72 rounded-full bg-[--primary] opacity-10 blur-3xl" />
+      <div className="absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-[--accent] opacity-10 blur-3xl" />
+    </section>
+  );
+}
+
+
+components/ScoreChip.tsx
+
+import clsx from "clsx";
+
+export function ScoreChip({ score }: { score: number }) {
+  const band =
+    score >= 80 ? "bg-green-500/15 text-green-300" :
+    score >= 60 ? "bg-yellow-500/15 text-yellow-300" :
+                  "bg-red-500/15 text-red-300";
+  return (
+    <span
+      aria-label={`Impact score ${score}`}
+      className={clsx("inline-flex items-center rounded-full px-2.5 py-1 text-sm font-medium", band)}
+    >
+      {score}
+    </span>
+  );
+}
+
+
+tailwind.config.ts (relevant bits)
+
+import type { Config } from "tailwindcss";
+const config: Config = {
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        bg: "var(--bg)",
+        panel: "var(--panel)",
+        text: "var(--text)",
+        muted: "var(--muted)",
+        primary: "var(--primary)",
+        accent: "var(--accent)",
+      },
+      boxShadow: {
+        soft: "0 10px 30px rgba(0,0,0,0.45)",
+      },
+      borderRadius: { '2xl': '1.25rem' }
+    }
+  }
+};
+export default config;
+
+10) Content/data placeholders
+
+Place hero mockup at /public/mockups/dashboard.png.
+
+Use small JSON fixtures to render EventCards (do not call live APIs).
+
+11) Acceptance criteria (must pass)
+
+Visual polish comparable to Dyad’s site: typography scale, spacing, and card aesthetics.
+
+Lighthouse: Perf ≥ 95, A11y ≥ 95, Best Practices ≥ 95, SEO ≥ 95 on /.
+
+No cumulative layout shift on hero.
+
+Mobile breakpoints look intentional (375px, 768px, 1024px, 1280px).
+
+All interactive elements have focus states and ARIA labels.
+
+Codebase organized, commented, and deployable via npm run build && npm run start.
+
+12) Deliverables
+
+Complete Next.js project with README.md including run/deploy steps.
+
+Reusable components and tokens documented in /docs/design.md.
+
+Figma-like color/spacing tokens listed in the README for future brand work.

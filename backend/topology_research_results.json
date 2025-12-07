@@ -1,0 +1,251 @@
+{
+  "timestamp": "2025-12-03T21:29:10.363660",
+  "data_range": {
+    "start": "2024-12-03",
+    "end": "2025-12-03"
+  },
+  "stocks_analyzed": 70,
+  "days_of_data": 249,
+  "clustering": {
+    "method": "spectral_clustering",
+    "n_clusters": 7,
+    "avg_purity": 0.6658119658119659,
+    "avg_intra_correlation": 0.46749442468264596,
+    "clusters": {
+      "0": {
+        "tickers": [
+          "AAPL",
+          "AXP",
+          "BAC",
+          "BLK",
+          "C",
+          "GS",
+          "JPM",
+          "MS",
+          "SCHW",
+          "UNP",
+          "USB",
+          "WFC"
+        ],
+        "size": 12,
+        "sector_composition": {
+          "Financials": 10,
+          "Technology": 1,
+          "Industrials": 1
+        },
+        "dominant_sector": "Financials",
+        "purity": 0.8333333333333334
+      },
+      "1": {
+        "tickers": [
+          "ABBV",
+          "AMGN",
+          "BIIB",
+          "BMY",
+          "DHR",
+          "ILMN",
+          "INCY",
+          "LLY",
+          "MRK",
+          "MRNA",
+          "PFE",
+          "REGN",
+          "TMO"
+        ],
+        "size": 13,
+        "sector_composition": {
+          "Healthcare": 7,
+          "Biotech": 6
+        },
+        "dominant_sector": "Healthcare",
+        "purity": 0.5384615384615384
+      },
+      "2": {
+        "tickers": [
+          "ABT",
+          "COST",
+          "GILD",
+          "HD",
+          "JNJ",
+          "LOW",
+          "MCD",
+          "ORCL",
+          "TJX"
+        ],
+        "size": 9,
+        "sector_composition": {
+          "Consumer": 5,
+          "Healthcare": 2,
+          "Biotech": 1,
+          "Technology": 1
+        },
+        "dominant_sector": "Consumer",
+        "purity": 0.5555555555555556
+      },
+      "4": {
+        "tickers": [
+          "ADBE",
+          "BA",
+          "CRM",
+          "NKE",
+          "SBUX",
+          "TGT",
+          "UNH",
+          "UPS",
+          "VRTX",
+          "ZTS"
+        ],
+        "size": 10,
+        "sector_composition": {
+          "Consumer": 3,
+          "Technology": 2,
+          "Industrials": 2,
+          "Biotech": 2,
+          "Healthcare": 1
+        },
+        "dominant_sector": "Consumer",
+        "purity": 0.3
+      },
+      "5": {
+        "tickers": [
+          "AMD",
+          "AMZN",
+          "CAT",
+          "GE",
+          "GOOGL",
+          "INTC",
+          "META",
+          "MSFT",
+          "NVDA",
+          "TSLA"
+        ],
+        "size": 10,
+        "sector_composition": {
+          "Technology": 6,
+          "Consumer": 2,
+          "Industrials": 2
+        },
+        "dominant_sector": "Technology",
+        "purity": 0.6
+      },
+      "3": {
+        "tickers": [
+          "COP",
+          "CVX",
+          "EOG",
+          "HAL",
+          "MPC",
+          "OXY",
+          "PSX",
+          "SLB",
+          "VLO",
+          "XOM"
+        ],
+        "size": 10,
+        "sector_composition": {
+          "Energy": 10
+        },
+        "dominant_sector": "Energy",
+        "purity": 1.0
+      },
+      "6": {
+        "tickers": [
+          "DE",
+          "HON",
+          "ISRG",
+          "LMT",
+          "MMM",
+          "RTX"
+        ],
+        "size": 6,
+        "sector_composition": {
+          "Industrials": 5,
+          "Biotech": 1
+        },
+        "dominant_sector": "Industrials",
+        "purity": 0.8333333333333334
+      }
+    }
+  },
+  "regime": {
+    "regime": "risk_on",
+    "confidence": 1.0,
+    "volatility": 0.0179,
+    "avg_correlation": 0.27,
+    "avg_return": 0.0136,
+    "negative_breadth": 0.4,
+    "scores": {
+      "risk_on": 0.4,
+      "risk_off": 0,
+      "high_volatility": 0,
+      "low_volatility": 1,
+      "trend_up": 0,
+      "trend_down": 0,
+      "correlated": 0,
+      "dispersed": 1
+    }
+  },
+  "regime_history_summary": {
+    "total_periods": 23,
+    "risk_on_pct": 0.7391304347826086,
+    "risk_off_pct": 0.26086956521739135
+  },
+  "backtest": {
+    "total_events": 200,
+    "events_with_cluster": 15,
+    "events_with_regime": 0,
+    "baseline_accuracy": 0.6083333333333333,
+    "topology_enhanced_accuracy": 0.6666666666666666,
+    "regime_analysis": {},
+    "cluster_analysis": {
+      "3": {
+        "event_count": 2,
+        "avg_return_1d": -0.26332103328031736,
+        "std_return_1d": 1.2085316503104386,
+        "positive_rate": 0.5
+      },
+      "5": {
+        "event_count": 3,
+        "avg_return_1d": 0.02618641430624935,
+        "std_return_1d": 1.4980390978970053,
+        "positive_rate": 0.5
+      },
+      "1": {
+        "event_count": 4,
+        "avg_return_1d": -0.9961227389035241,
+        "std_return_1d": 0.0,
+        "positive_rate": 0.0
+      },
+      "2": {
+        "event_count": 4,
+        "avg_return_1d": 0.8941384494265598,
+        "std_return_1d": 1.091342805921076,
+        "positive_rate": 0.75
+      }
+    },
+    "current_regime": {
+      "regime": "risk_on",
+      "confidence": 1.0,
+      "volatility": 0.0179,
+      "avg_correlation": 0.27,
+      "avg_return": 0.0136,
+      "negative_breadth": 0.4,
+      "scores": {
+        "risk_on": 0.4,
+        "risk_off": 0,
+        "high_volatility": 0,
+        "low_volatility": 1,
+        "trend_up": 0,
+        "trend_down": 0,
+        "correlated": 0,
+        "dispersed": 1
+      }
+    },
+    "improvement": 0.05833333333333335
+  },
+  "recommendations": [
+    "POSITIVE: Correlation clustering shows strong sector alignment - clusters are meaningful",
+    "REGIME: Market is in RISK-ON mode (confidence: 100%) - events should drive expected price movements",
+    "VALIDATION: Topology features improved prediction accuracy by 5.8% - recommend integration with Market Echo Engine"
+  ]
+}

@@ -1,0 +1,44 @@
+You are a senior full-stack engineer working on the Release Radar project.
+Use the current codebase and EVALUATION_REPORT.md as context. Your goal is to close the critical gaps called out in that report and move the system from a B+ prototype to a production-ready V1.
+
+Please implement Wave G – Production Gap Closure in this order:
+	1.	Secure scanner endpoints
+	•	In backend/api/routers/scanners.py, implement proper admin-only access for all manual scan endpoints (the ones currently marked TODO).
+	•	Use the existing auth/JWT/API-key system and an is_admin flag (or equivalent) on users/keys.
+	•	Add rate limiting and structured logging (who triggered manual scans and when).
+	2.	Implement real scanners
+	•	In backend/scanners/impl/sec_edgar.py (and other scanner impl files), replace the placeholders with real logic that:
+	•	Fetches real or realistically stubbed SEC/FDA/press release data.
+	•	Normalizes it into the events table schema (ticker, company name, event type, announced_at, source_url, etc.).
+	•	De-duplicates events by ticker + date + title hash to avoid spam inserts.
+	•	Wire these scanners into the existing scheduled jobs so they run automatically.
+	•	Ensure the Scanner Status cards and Companies Tracked → events modals are populated from these new events.
+	3.	Portfolio MVP
+	•	Implement a minimal but functional Portfolio feature:
+	•	CSV upload for holdings (ticker, shares, cost basis, optional label).
+	•	Persist portfolios per user.
+	•	Compute basic metrics: current value (using existing market data), and exposure to upcoming scored events (e.g., count and total “risk score” for next 30 days per holding).
+	•	Add API endpoints and UI wiring so users can: upload a CSV, see their holdings, and view upcoming event impact on their portfolio.
+	4.	Integrate market data into scoring
+	•	In backend/jobs/compute_event_scores.py, finish the TODOs so event scoring actually uses:
+	•	Stock beta.
+	•	ATR percentile.
+	•	SPY / market regime (bull vs bear / volatility).
+	•	Expose these factors in the existing “factor breakdown” fields returned by the scoring API and used in the UI tooltips.
+	•	Tune the weights so that high beta + high ATR + adverse market regime leads to higher absolute scores, with rationale documented in SCORING.md.
+	5.	Add a focused automated test suite
+	•	Add unit/integration tests for:
+	•	Scanner ingestion (correct mapping into events table and dedupe behavior).
+	•	Scoring logic given known price histories and market regimes.
+	•	Portfolio exposure computation for simple synthetic portfolios.
+	•	Admin protection and rate limiting on manual scan endpoints.
+	•	Add at least one end-to-end smoke test: “ingest a new event → score it → verify it appears in the companies/events API used by the dashboard.”
+	6.	Acceptance criteria
+	•	All new scanners run without crashing and populate realistic events for a sample of tickers.
+	•	Manual scan endpoints are admin-only and correctly rate-limited.
+	•	A user can upload a CSV portfolio and see upcoming event exposure.
+	•	Scoring responses include the market-data factors and produce sensible variations when beta/ATR/SPY change.
+	•	New tests pass and are integrated into the existing test workflow.
+	•	Update EVALUATION_REPORT.md with a new section describing the Wave G changes and an updated production-readiness grade.
+
+Work in small, well-scoped commits and keep existing APIs and contracts backward-compatible unless there is a very strong reason to change them.

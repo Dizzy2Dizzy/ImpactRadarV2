@@ -1,0 +1,136 @@
+Paste this into Replit:
+
+⸻
+
+You are the repo’s senior engineer. Add more active scanners and expand the tracked company universe. Keep names and style consistent with the codebase.
+
+Goals
+	1.	Increase active scanners from 3 → 10 categories.
+	2.	Expand “Companies Tracked” from ~100 → S&P 500 by default (with room to 1,000).
+	3.	Make all scanners run on schedules with idempotent writes, de-dupe, and metrics.
+	4.	Update the UI to reflect counts, search, and pagination.
+
+A) Back-end changes
+
+A1) Scanner catalog
+
+Create/extend backend/scanners/catalog.py with a registry:
+
+SCANNERS = [
+  # existing
+  {"key":"sec_edgar","label":"SEC EDGAR","fn":"scan_sec_edgar"},
+  {"key":"fda_announcements","label":"FDA Announcements","fn":"scan_fda"},
+  {"key":"company_press","label":"Company Press Releases","fn":"scan_press"},
+
+  # new
+  {"key":"earnings_calls","label":"Earnings Calls","fn":"scan_earnings_calls"},
+  {"key":"sec_8k","label":"SEC 8-K","fn":"scan_sec_8k"},
+  {"key":"sec_10q","label":"SEC 10-Q","fn":"scan_sec_10q"},
+  {"key":"guidance_updates","label":"Guidance Updates","fn":"scan_guidance"},
+  {"key":"product_launch","label":"Product Launches","fn":"scan_product_launch"},
+  {"key":"ma_activity","label":"M&A / Strategic","fn":"scan_ma"},
+  {"key":"dividend_buyback","label":"Dividends / Buybacks","fn":"scan_dividend_buyback"},
+]
+
+Each scan_* returns normalized events:
+
+{
+  "ticker":"AAPL",
+  "event_type":"earnings" | "press_release" | "8k" | "10q" | "guidance" | "product_launch" | "ma" | "dividend",
+  "headline":"...",
+  "source_url":"https://…",
+  "announced_at": datetime,
+  "after_hours": bool,
+  "raw_id": "stable-external-id"   # used for de-dupe
+}
+
+A2) Implement lightweight scanners
+
+Add implementations in backend/scanners/impl/*.py. Use existing utilities for HTTP, RSS, JSON, and respect rate limits. Sources:
+	•	SEC: submissions JSON & company filings feeds for 8-K/10-Q.
+	•	Earnings calls: company IR calendars and EDGAR 8-K Item 2.02.
+	•	Press/product: company newsroom RSS.
+	•	Guidance: 8-K Item 2.02 / press releases.
+	•	M&A: 8-K Item 1.01 / 2.01 / press.
+	•	Dividend/Buyback: company press + exchange notices.
+
+If a source is unavailable at runtime, skip gracefully; do not fail the job.
+
+A3) Idempotent upsert + de-dupe
+
+In the event ingestion layer (the one used by current scanners), ensure:
+	•	Natural key (ticker, event_type, raw_id) with unique DB index.
+	•	On conflict → update headline, announced_at, source_url, after_hours.
+	•	Maintain created_at, updated_at, and source_scanner.
+
+A4) Scheduling
+
+Add a job backend/jobs/run_scanners.py that:
+	•	Iterates SCANNERS, runs in parallel with bounded concurrency (e.g., 4).
+	•	Retries with exponential backoff.
+	•	Emits Prometheus counters:
+	•	scanner_runs_total{scanner=…}
+	•	scanner_events_ingested_total{scanner=…}
+	•	scanner_errors_total{scanner=…}
+	•	scanner_runtime_seconds{scanner=…}
+Wire a workflow/Makefile target:
+
+make scanners   # runs once
+make scanners:loop   # runs forever with sleeps (e.g., every 10 min)
+
+Add a Replit background workflow that runs make scanners:loop.
+
+A5) Universe expansion
+	•	Add data/universe/sp500.csv with columns: ticker,name,sector.
+	•	Create backend/scripts/load_universe.py to upsert the universe table and seed companies (or equivalent model).
+	•	Expose /universe API to return tracked tickers with pagination.
+
+A6) Performance and limits
+	•	Paginate scanners’ source calls.
+	•	Cap per-run inserts per scanner (e.g., 2,000) with next_cursor persisted.
+	•	Ensure API lists (/scores, /events, /companies) have DB indexes to match new volume.
+
+B) Front-end changes
+
+B1) Companies modal
+	•	Add search by ticker/name and pagination (page size 25).
+	•	Show total count “Companies Tracked: 500”.
+	•	Keep existing score pills; work with larger lists without layout jank.
+
+B2) Dashboard tiles
+	•	“Active Scanners” tile should read from SCANNERS via /metrics or a thin /scanners endpoint.
+	•	“Companies Tracked” reads from /universe?countOnly=1.
+
+B3) Empty/loading states
+	•	Skeleton rows for company list and events while fetching.
+	•	“No events yet” message per company.
+
+C) Acceptance tests
+
+Add quick tests:
+	•	backend/tests/test_universe_load.py: loads sp500.csv, asserts ≥ 500 rows upserted.
+	•	backend/tests/test_scanner_contracts.py: each scan_* returns normalized schema for a known fixture.
+	•	marketing/e2e/companies.spec.ts: search “Apple” returns AAPL; pagination works; total count shows 500+.
+
+D) Run / Validate
+	1.	Seed S&P 500:
+
+cd backend && python scripts/load_universe.py data/universe/sp500.csv
+
+	2.	Run scanners once, then loop:
+
+make scanners
+make scanners:loop
+
+	3.	Start services and tests:
+
+cd backend && pytest -q
+cd marketing && npx playwright test -g companies
+
+Done when
+	•	Dashboard shows Active Scanners: 10 and Companies Tracked: ~500.
+	•	Companies modal supports search + pagination smoothly.
+	•	New events from added scanners appear and are de-duplicated.
+	•	Prometheus metrics expose run, ingest, error, and runtime counters per scanner.
+
+Keep diffs focused. Reuse existing helpers. No breaking API changes.

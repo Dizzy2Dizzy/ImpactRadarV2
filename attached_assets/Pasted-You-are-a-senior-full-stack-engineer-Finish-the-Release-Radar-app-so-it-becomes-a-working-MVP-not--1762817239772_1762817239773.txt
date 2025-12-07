@@ -1,0 +1,176 @@
+You are a senior full-stack engineer. Finish the Release Radar app so it becomes a working MVP (not just UI). Do not rewrite the marketing site — keep design and pages. Only complete backend and connect the dashboard.
+GOALS
+Backend (FastAPI) must run at port 8501
+
+
+Frontend (Next.js) continues at port 5000
+
+
+User login & register must work using JWT HttpOnly cookies
+
+
+Dashboard pages must pull real data from the API
+
+
+Watchlist add/remove must work
+
+
+Database must auto-create tables and seed sample companies/events
+
+
+Add SEC 8-K scanner that runs every 10 min
+
+
+New SEC event discoveries must be pushed to dashboard via SSE (Server-Sent Events)
+
+
+
+MAKE THESE CHANGES
+1) Backend Run Command
+Add this to .replit or Run panel:
+cd backend && pip install -r requirements.txt && uvicorn api.main:app --host 0.0.0.0 --port 8501 --reload
+Do not run Streamlit.
+
+2) Auto-Create DB on Startup
+In backend/api/main.py, inside lifespan startup, add:
+from api.db.session import engine
+from api.db.models import Base
+
+Base.metadata.create_all(bind=engine)
+
+3) Seed Sample Data
+Create backend/scripts/seed.py:
+from api.db.session import SessionLocal, engine
+from api.db.models import Base, Company, Event
+from datetime import datetime, timedelta
+
+Base.metadata.create_all(bind=engine)
+
+db = SessionLocal()
+
+cos = [
+    Company(name="Tesla", ticker="TSLA", sector="Tech"),
+    Company(name="Biogen", ticker="BIIB", sector="Pharma"),
+    Company(name="JPMorgan", ticker="JPM", sector="Finance"),
+]
+for c in cos: db.add(c)
+db.commit(); [db.refresh(c) for c in cos]
+
+e = Event(company_id=cos[1].id, title="FDA Approval - Drug X",
+          description="FDA approves drug X for treatment", category="FDA",
+          event_time=datetime.utcnow()+timedelta(days=1), score=90, direction="positive")
+db.add(e); db.commit()
+
+print("Seeded.")
+Run once:
+cd backend && python scripts/seed.py
+
+4) Implement Auth on Frontend
+In /marketing/lib/api.ts, create:
+export async function api(path: string, opts: RequestInit = {}) {
+  return fetch(`/api_rr${path}`, {
+    credentials: "include",
+    ...opts,
+    headers: { "Content-Type": "application/json", ...(opts.headers || {}) }
+  });
+}
+Login page → call:
+await api("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) })
+router.push("/app/dashboard")
+Register page → same but POST /auth/register.
+
+5) Protect Dashboard
+In /marketing/app/app/layout.tsx:
+useEffect(() => {
+  fetch("/api_rr/healthz", { credentials: "include" })
+    .then(r => { if (!r.ok) router.push("/login") })
+}, [])
+
+6) Events API Wiring (Dashboard Data)
+In /marketing/app/app/dashboard/page.tsx:
+const res = await api("/events?limit=50");
+const events = await res.json();
+Render table.
+
+7) Watchlist UI Wiring
+On star button click:
+await api(`/watchlist/${companyId}`, { method: "POST" })
+On unstar:
+await api(`/watchlist/${companyId}`, { method: "DELETE" })
+Initial load:
+const wl = await api("/watchlist").then(r=>r.json());
+
+**8) 
+REAL-TIME FEED (SSE)
+In /marketing/app/app/dashboard/page.tsx (client side):
+useEffect(() => {
+  const es = new EventSource("/api_rr/stream/discoveries");
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    setEvents(prev => [data, ...prev]); // prepend live event
+  };
+  return () => es.close();
+}, []);
+
+9) SEC Scanner (Runs every 10 minutes)
+In backend/api/scheduler.py:
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from api.services.scanner_service import scan_sec
+
+def start_scheduler():
+    sched = AsyncIOScheduler()
+    sched.add_job(scan_sec, "interval", minutes=10)
+    sched.start()
+    return sched
+In backend/api/services/scanner_service.py (simple MVP logic):
+import httpx
+from bs4 import BeautifulSoup
+from datetime import datetime
+from api.db.session import SessionLocal
+from api.db.models import Event, Company
+
+async def scan_sec():
+    db = SessionLocal()
+    # Example: look for any 8-K tied to Tesla
+    url = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=TSLA&type=8-K"
+    html = httpx.get(url).text
+    if "8-K" in html:
+        c = db.query(Company).filter_by(ticker="TSLA").first()
+        if c:
+            ev = Event(company_id=c.id, title="SEC 8-K Filing", description="Auto-detected", category="SEC", event_time=datetime.utcnow())
+            db.add(ev); db.commit()
+    db.close()
+
+10) Stream New Events Over SSE
+In backend/api/routers/stream.py:
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+import asyncio, json
+
+router = APIRouter(prefix="/stream")
+
+async def event_stream():
+    while True:
+        # Query newest events
+        from api.db.session import SessionLocal
+        from api.db.models import Event
+        db = SessionLocal()
+        e = db.query(Event).order_by(Event.id.desc()).first()
+        db.close()
+        yield f"data: {json.dumps(e.__dict__)}\n\n"
+        await asyncio.sleep(8)
+
+@router.get("/discoveries")
+async def discoveries():
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+FINAL ACCEPTANCE CHECK
+✅ Register → Login → Redirect to Dashboard
+✅ Events load from /events
+✅ Watchlist persists
+✅ New SEC filing triggers new event in dashboard within 1–10 minutes
+✅ No console errors
+✅ No 500s
+When finished, reply:
+READY FOR REVIEW
+

@@ -1,0 +1,200 @@
+You are a senior full-stack engineer, QA engineer, and product hardening specialist.
+
+This repo is Release Radar, an event-driven stock intelligence platform (Next.js dashboard + Python/FastAPI/Streamlit backend + scanners + PostgreSQL).
+
+You already generated FEATURE_MAP.md and HARDENING_REPORT.md with a B quality grade and identified:
+	•	WebSocket errors on the marketing/dashboard site
+	•	Failing E2E tests (alerts/analytics)
+	•	Lack of human-verified “golden path” flows
+	•	Missing automated source verification tools
+
+Now I want you to apply a focused, opinionated hardening pass with these goals:
+	1.	Stabilize the core UI and avoid runtime errors.
+	2.	Define and implement a minimal V1 feature set.
+	3.	Make a small set of golden-path E2E tests rock-solid.
+	4.	Add a minimal event source verification tool.
+	5.	Keep all dangerous or unstable features flagged, gated, or disabled.
+	6.	Optimize performance where safe (no correctness trade-offs).
+
+Follow the instructions below carefully and explain what you changed when you’re done.
+
+⸻
+
+Global rules
+	1.	No fake “Primary” events in production pathways
+	•	Use real SEC/FDA/company IR events wherever possible.
+	•	Do not invent, simulate, or template primary events (e.g. fake 8-K/10-Q/FDA approvals) for live UI.
+	•	If you create mock events for testing:
+	•	Keep them in test fixtures or a test database.
+	•	Mark them clearly (e.g. is_mock = true) and ensure they never appear in production-facing UI.
+	2.	Safety > features
+	•	Any feature that:
+	•	crashes,
+	•	shows obviously wrong data,
+	•	or depends on unreliable real-time plumbing
+must be either:
+	•	disabled/hidden for now, or
+	•	clearly labeled as “Beta / Experimental” and not required for V1.
+	3.	No real external side effects
+	•	E2E tests must not:
+	•	send real emails/SMS,
+	•	charge real Stripe/crypto payments,
+	•	or call real X.com APIs in ways that violate rate limits.
+	•	Use test keys, sandbox modes, or stub clients.
+
+⸻
+
+Step 1 – Define and encode a minimal V1 scope
+
+Create a new doc: docs/V1_SCOPE.md that answers:
+	•	“What is considered in-scope for V1 (beta)?”
+	•	“What is Beta/Labs only?”
+	•	“What is out of scope for now?”
+
+Concretely, mark as V1 core at minimum:
+	•	Auth: signup, login, logout, email verification.
+	•	Account basics: profile, plan display (even if payments are stubbed), watchlist creation.
+	•	Events:
+	•	Event list + filters (by ticker, date, type).
+	•	Event detail page with source link.
+	•	Impact scores (base model + any calibrated probabilities).
+	•	Portfolio + basic earnings impact view (only if stable).
+	•	Projector chart:
+	•	Basic candlestick/line + event markers.
+	•	RadarQuant/AI:
+	•	Only if it reliably:
+	•	reads from the DB,
+	•	does not fabricate primary events,
+	•	degrades gracefully if AI backend fails.
+
+Mark as Beta/Labs (can be shown but not relied on for V1 stability):
+	•	Advanced analytics dashboards.
+	•	Alerts system (if E2E tests still flaky).
+	•	X.com/Twitter sentiment tab.
+	•	Live “tape” or push real-time feeds (via WebSockets/EventSource).
+	•	Deep backtesting visuals beyond existing basic backtests.
+	•	Any untested admin-only tools.
+
+Mark as Out of scope for now:
+	•	Any feature with no tests and obvious runtime errors that you cannot fix quickly.
+
+Implement a simple feature flag system, e.g.:
+	•	A config/env-driven module for frontend and backend:
+	•	ENABLE_LABS_UI
+	•	ENABLE_X_SENTIMENT
+	•	ENABLE_LIVE_WS
+	•	ENABLE_ALERTS_BETA
+
+Use these flags to hide or label non-core features.
+
+⸻
+
+Step 2 – Stabilize core UI and remove crashing behavior
+	1.	WebSocket / “Cannot read properties of undefined (reading ‘bind’)”
+	•	Locate all WebSocket/SSE real-time logic used by the dashboard (e.g. in hooks or providers).
+	•	Fix obvious initialization issues (e.g. accessing window/WS object in server components, or using an undefined client).
+	•	If after a reasonable fix the WS system is still unstable, disable live streaming for now for the marketing/dashboard UI:
+	•	Use a simple polling fallback for event updates (e.g. fetch /api/events every N seconds).
+	•	Hide or demote any “live tape” components behind a ENABLE_LIVE_WS flag.
+	•	Make sure that, with WS disabled, the site no longer logs bind/undefined errors in the browser console.
+	2.	Clean navigation
+	•	Using FEATURE_MAP + V1_SCOPE, ensure the main sidebar / top nav contains:
+	•	Only V1 core items unflagged.
+	•	Beta/Labs items clearly marked with a small “Beta”/“Labs” badge or hidden behind ENABLE_LABS_UI.
+	•	Verify that clicking each visible nav item:
+	•	Renders a page without runtime errors.
+	•	Shows either functional content or a clearly labeled “Coming Soon / Beta” placeholder, not a blank screen.
+
+⸻
+
+Step 3 – Golden-path E2E tests (make a small set bullet-proof)
+
+From the existing ~42 E2E tests:
+	1.	Identify or create 5–8 golden-path specs that must be stable:
+Examples (adapt to actual file names):
+	•	auth.core.spec.ts – signup → email verify (mock) → login → logout.
+	•	events.core.spec.ts – view events list → filter by ticker → open event detail → open source link.
+	•	watchlist.core.spec.ts – create watchlist → add ticker → verify events filtered by watchlist.
+	•	projector.core.spec.ts – open Projector → load ticker with events → verify event markers.
+	•	ai.core.spec.ts – open RadarQuant panel → ask a simple question about a known event → check response references real DB data.
+	2.	For non-critical specs (e.g. alerts.spec.ts, analytics.spec.ts that are timing out):
+	•	Either:
+	•	Fix them fully (stable data setup, stubbed external services, fast responses), or
+	•	Mark them as skipped (e.g. it.skip(...)) with a comment:
+// TODO: Re-enable when alerts/analytics are production-ready
+The goal: all golden-path tests pass reliably. Non-core tests are allowed to be skipped but clearly documented.
+	3.	Add a npm run test:golden (or similar) script that runs only these core specs and ensure it passes.
+
+⸻
+
+Step 4 – Minimal event source verification tool
+
+Implement a simple automated check for event data quality:
+	1.	Add a backend script, e.g. tools/verify_event_sources.py, that:
+	•	Connects to the production-style DB (or a representative copy).
+	•	Samples events from each Primary source (SEC, FDA, company IR).
+	•	For each sampled event:
+	•	Verify source_url domain:
+	•	SEC: sec.gov
+	•	FDA: fda.gov
+	•	Company IR: official domains (e.g. from a whitelist or pattern).
+	•	Optionally perform shallow checks:
+	•	SEC URLs follow expected EDGAR patterns.
+	•	No obviously malformed URLs.
+	•	Output a report (to console or file) listing:
+	•	Count of events checked per source.
+	•	Any events with suspicious or invalid URLs.
+	2.	If you find systemic issues (e.g., many SEC events with non-SEC domains):
+	•	Add a valid_source boolean field or status to the events table.
+	•	Mark suspicious events as invalid.
+	•	In the UI, do not show invalid events to normal users until pipeline is fixed.
+	3.	Add a short doc section in HARDENING_REPORT.md describing this tool and any findings.
+
+⸻
+
+Step 5 – Performance pass (only on core flows)
+
+After the above is stable and golden-path tests pass:
+	1.	Frontend performance
+	•	For the main V1 routes (Home, Events, Projector, Portfolio/Watchlist, RadarQuant):
+	•	Check for obviously heavy imports.
+	•	Defer or dynamic-import:
+	•	Heavy charting libs.
+	•	Rarely used panels.
+	•	Paginate large lists (events) if not already.
+	•	Ensure that initial page load doesn’t block on:
+	•	Scanners,
+	•	Heavy backtests,
+	•	Or nonessential analytics.
+	2.	Backend performance
+	•	For core endpoints (/events, /projector, /ai, /watchlist):
+	•	Ensure proper DB indexes exist on:
+	•	ticker, event_date, event_type, watchlist_id.
+	•	Avoid N+1 queries; use sensible joins or prefetching.
+	•	Cache hot, read-only queries where appropriate (e.g. common event lists).
+
+Do not change model logic or data semantics for speed; only fix obvious inefficiencies.
+
+⸻
+
+Step 6 – Final update to HARDENING_REPORT.md
+
+Update HARDENING_REPORT.md to reflect:
+	•	The new V1_SCOPE decisions.
+	•	Which features are:
+	•	Stable and tested (V1 core).
+	•	Beta/Labs (exposed but not critical).
+	•	Disabled/hidden.
+	•	Status of:
+	•	WebSocket errors (fixed or disabled).
+	•	Golden-path E2E tests (should be passing).
+	•	Event source verification script (implemented, with summary of findings).
+	•	Any remaining blockers before letting external users try the app in a limited beta.
+
+When you’re done, summarize in the console / logs:
+	•	Which features are now considered V1 core and stable.
+	•	Which specs pass in the golden-path test run.
+	•	Whether the WebSocket “bind” errors still occur.
+	•	Whether event source verification flagged any serious issues.
+
+Implement all of this conservatively: do not leave unstable or misleading features exposed as if they were production-ready.

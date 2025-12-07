@@ -1,0 +1,50 @@
+[
+  {
+    "ticker": "TTWO",
+    "name": "Take-Two Interactive",
+    "industry": "Gaming",
+    "subsidiaries": [
+      "Rockstar Games",
+      "2K Games"
+    ],
+    "tracked": true
+  },
+  {
+    "ticker": "AAPL",
+    "name": "Apple Inc.",
+    "industry": "Technology",
+    "subsidiaries": [
+      "Beats Electronics",
+      "Shazam"
+    ],
+    "tracked": true
+  },
+  {
+    "ticker": "NVDA",
+    "name": "NVIDIA Corporation",
+    "industry": "Semiconductors",
+    "subsidiaries": [
+      "Mellanox Technologies"
+    ],
+    "tracked": true
+  },
+  {
+    "ticker": "PFE",
+    "name": "Pfizer Inc.",
+    "industry": "Pharmaceuticals",
+    "subsidiaries": [
+      "Wyeth",
+      "Hospira"
+    ],
+    "tracked": true
+  },
+  {
+    "ticker": "TSLA",
+    "name": "Tesla Inc.",
+    "industry": "Automotive",
+    "subsidiaries": [
+      "SolarCity"
+    ],
+    "tracked": true
+  }
+]

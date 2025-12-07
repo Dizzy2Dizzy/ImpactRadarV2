@@ -1,0 +1,260 @@
+You are a senior full-stack engineer. My ZIP only has the Next.js marketing app. Create a working backend and connect it so the dashboard is functional.
+
+GOALS
+- Frontend: Next.js 14 runs at 0.0.0.0:5000 (already present)
+- Backend: FastAPI runs at 0.0.0.0:8501
+- DB: SQLite dev, Postgres via RR_DB_URL when set
+- Auth: email+password → JWT in HttpOnly cookie
+- Endpoints: /auth/*, /events, /companies, /watchlist, /stream/discoveries, /healthz
+- Seed: 3 companies, 10 events
+- SSE: stream newest events
+- Frontend: uses /api_rr/* rewrite to call the backend; /app/* is auth-guarded; watchlist buttons work
+
+CREATE BACKEND STRUCTURE
+/backend
+  requirements.txt
+  app.py                 # uvicorn entry
+  api/
+    __init__.py
+    main.py
+    scheduler.py         # register jobs later
+    db/
+      __init__.py
+      models.py
+      session.py
+    routers/
+      __init__.py
+      auth.py
+      companies.py
+      events.py
+      watchlist.py
+      stream.py
+  scripts/
+    seed.py
+
+WRITE FILES
+
+/backend/requirements.txt:
+fastapi==0.115.5
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+SQLAlchemy==2.0.36
+python-dotenv==1.0.1
+bcrypt==4.2.0
+PyJWT==2.9.0
+apscheduler==3.10.4
+
+/backend/api/db/session.py:
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+import os
+URL = os.getenv("RR_DB_URL","sqlite:///./releaseradar.db")
+connect_args = {"check_same_thread": False} if URL.startswith("sqlite") else {}
+engine = create_engine(URL, future=True, pool_pre_ping=True, connect_args=connect_args)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+/backend/api/db/models.py:
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, Text, Boolean
+from datetime import datetime
+class Base(DeclarativeBase): pass
+class User(Base):
+    __tablename__="users"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(20), default="user")
+    plan: Mapped[str] = mapped_column(String(20), default="free")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+class Company(Base):
+    __tablename__="companies"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    ticker: Mapped[str] = mapped_column(String(20), index=True)
+    sector: Mapped[str] = mapped_column(String(50), index=True)
+    parent_id: Mapped[int|None] = mapped_column(ForeignKey("companies.id"), nullable=True)
+class Event(Base):
+    __tablename__="events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    title: Mapped[str] = mapped_column(String(500))
+    description: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(50), index=True)
+    event_time: Mapped[datetime] = mapped_column(DateTime, index=True)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    direction: Mapped[str] = mapped_column(String(12), default="uncertain")
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    source_url: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+class Watchlist(Base):
+    __tablename__="watchlists"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+
+/backend/api/routers/auth.py:
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
+from api.db.session import get_db
+from api.db.models import User
+import bcrypt, jwt, os, datetime as dt
+SECRET=os.getenv("RR_JWT_SECRET","dev-secret")
+ALGO="HS256"; EXP_MIN=int(os.getenv("RR_JWT_EXPIRES_MIN","120"))
+router=APIRouter(prefix="/auth", tags=["auth"])
+class Creds(BaseModel):
+    email: EmailStr
+    password: str
+def token_for(uid:int):
+    exp=dt.datetime.utcnow()+dt.timedelta(minutes=EXP_MIN)
+    return jwt.encode({"sub":uid,"exp":exp}, SECRET, algorithm=ALGO)
+@router.post("/register")
+def register(c:Creds, db:Session=Depends(get_db)):
+    if db.query(User).filter_by(email=c.email).first(): raise HTTPException(409,"exists")
+    pw=bcrypt.hashpw(c.password.encode(), bcrypt.gensalt()).decode()
+    u=User(email=c.email, password_hash=pw); db.add(u); db.commit(); db.refresh(u)
+    t=token_for(u.id); r=Response(); r.set_cookie("rr_token",t,httponly=True,samesite="lax"); r.media_type="application/json"; r.body=b'{"ok":true}'; return r
+@router.post("/login")
+def login(c:Creds, db:Session=Depends(get_db)):
+    u=db.query(User).filter_by(email=c.email).first()
+    if not u or not bcrypt.checkpw(c.password.encode(), u.password_hash.encode() if isinstance(u.password_hash, bytes) else u.password_hash.encode()): raise HTTPException(401,"bad")
+    t=token_for(u.id); r=Response(); r.set_cookie("rr_token",t,httponly=True,samesite="lax"); r.media_type="application/json"; r.body=b'{"ok":true}'; return r
+@router.post("/logout")
+def logout():
+    r=Response(); r.delete_cookie("rr_token"); r.media_type="application/json"; r.body=b'{"ok":true}'; return r
+
+/backend/api/routers/companies.py:
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from api.db.session import get_db
+from api.db.models import Company
+router=APIRouter(prefix="/companies", tags=["companies"])
+@router.get("")
+def companies(q:str|None=None, sector:str|None=None, limit:int=50, offset:int=0, db:Session=Depends(get_db)):
+    stmt=select(Company)
+    if q: from sqlalchemy import or_; stmt=stmt.where(or_(Company.name.ilike(f"%{q}%"), Company.ticker.ilike(f"%{q}%")))
+    if sector: stmt=stmt.where(Company.sector==sector)
+    return [c.__dict__ for c in db.execute(stmt.offset(offset).limit(limit)).scalars().all()]
+
+/backend/api/routers/events.py:
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from api.db.session import get_db
+from api.db.models import Event
+router=APIRouter(prefix="/events", tags=["events"])
+@router.get("")
+def events(company_id:int|None=None, category:str|None=None, direction:str|None=None, min_score:float|None=None, limit:int=100, offset:int=0, db:Session=Depends(get_db)):
+    stmt=select(Event).order_by(Event.event_time.desc())
+    if company_id: stmt=stmt.where(Event.company_id==company_id)
+    if category: stmt=stmt.where(Event.category==category)
+    if direction: stmt=stmt.where(Event.direction==direction)
+    if min_score is not None: stmt=stmt.where(Event.score>=min_score)
+    return [e.__dict__ for e in db.execute(stmt.offset(offset).limit(limit)).scalars().all()]
+
+/backend/api/routers/watchlist.py:
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from api.db.session import get_db
+from api.db.models import Watchlist
+router=APIRouter(prefix="/watchlist", tags=["watchlist"])
+USER_ID=1
+@router.get("") 
+def get_wl(db:Session=Depends(get_db)):
+    return [w.__dict__ for w in db.execute(select(Watchlist).where(Watchlist.user_id==USER_ID)).scalars().all()]
+@router.post("/{company_id}")
+def add(company_id:int, db:Session=Depends(get_db)):
+    if not db.query(Watchlist).filter_by(user_id=USER_ID, company_id=company_id).first():
+        db.add(Watchlist(user_id=USER_ID, company_id=company_id)); db.commit()
+    return {"ok":True}
+@router.delete("/{company_id}")
+def rem(company_id:int, db:Session=Depends(get_db)):
+    w=db.query(Watchlist).filter_by(user_id=USER_ID, company_id=company_id).first()
+    if w: db.delete(w); db.commit()
+    return {"ok":True}
+
+/backend/api/routers/stream.py:
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+import asyncio, json
+from api.db.session import SessionLocal
+from api.db.models import Event
+router=APIRouter(prefix="/stream", tags=["stream"])
+async def loop():
+    last_id=None
+    while True:
+        s=SessionLocal(); e=s.query(Event).order_by(Event.id.desc()).first(); s.close()
+        if e and getattr(e,"id",None)!=last_id:
+            last_id=e.id
+            payload={k:v for k,v in e.__dict__.items() if k!="__sa_instance_state"}
+            yield f"data: {json.dumps(payload)}\n\n"
+        await asyncio.sleep(5)
+@router.get("/discoveries")
+async def sse():
+    return StreamingResponse(loop(), media_type="text/event-stream")
+
+/backend/api/main.py:
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import os
+from api.db.session import engine
+from api.db.models import Base
+from api.routers import auth, companies, events, watchlist, stream
+ALLOWED=os.getenv("ALLOWED_ORIGINS","http://localhost:5000").split(",")
+app=FastAPI(title="Release Radar API")
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+Base.metadata.create_all(bind=engine)
+app.include_router(auth.router)
+app.include_router(companies.router)
+app.include_router(events.router)
+app.include_router(watchlist.router)
+app.include_router(stream.router)
+@app.get("/healthz")
+def health(): return {"status":"ok"}
+
+/backend/scripts/seed.py:
+from api.db.session import SessionLocal, engine
+from api.db.models import Base, Company, Event
+from datetime import datetime, timedelta
+Base.metadata.create_all(bind=engine)
+s=SessionLocal()
+cos=[Company(name="Tesla",ticker="TSLA",sector="Tech"), Company(name="Biogen",ticker="BIIB",sector="Pharma"), Company(name="JPMorgan",ticker="JPM",sector="Finance")]
+for c in cos: s.add(c)
+s.commit(); [s.refresh(c) for c in cos]
+for i in range(10):
+    s.add(Event(company_id=cos[i%3].id,title=f"Sample event {i}",description="seed",category="SEC",event_time=datetime.utcnow()+timedelta(minutes=i),score=60+i%10,direction="positive" if i%2==0 else "uncertain"))
+s.commit(); print("Seeded 3 companies, 10 events.")
+
+/backend/app.py:
+import uvicorn
+if __name__=="__main__":
+    uvicorn.run("api.main:app", host="0.0.0.0", port=8501, reload=True)
+
+FRONTEND CHANGES
+- marketing/next.config.js: add dev rewrite:
+  async rewrites(){ return [{ source:"/api_rr/:path*", destination:"http://127.0.0.1:8501/:path*" }]; }
+- marketing/lib/api.ts: export a fetch helper that sets credentials:"include"
+- /marketing/app/(auth)/login and /register: POST to /api_rr/auth/login|register then router.push("/app/dashboard")
+- /marketing/app/app/layout.tsx: on mount, fetch("/api_rr/healthz", {credentials:"include"}) else redirect("/login")
+- /marketing/app/app/dashboard/page.tsx: fetch("/api_rr/events"), and on client open new EventSource("/api_rr/stream/discoveries") and prepend rows on message
+
+RUN
+- Tab A: cd marketing && npm i && npm run dev -p 5000
+- Tab B: cd backend && pip install -r requirements.txt && python scripts/seed.py && uvicorn api.main:app --host 0.0.0.0 --port 8501 --reload
+
+Pass criteria:
+- Register → login → /app/dashboard
+- /events returns data; dashboard table renders
+- Watchlist POST/DELETE works
+- SSE pushes new events when an Event row is inserted
+- /healthz returns 200
+- No console errors

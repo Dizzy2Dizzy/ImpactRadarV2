@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0B0F14;
+  --panel: #11161D;
+  --text: #EAF0F7;
+  --muted: #9FB2C7;
+  --primary: #7C9EFF;
+  --primary-contrast: #0A1A3A;
+  --accent: #00E0A4;
+  --danger: #FF5D5D;
+  --warning: #FACC15;
+  --warning-dark: #D97706;
+  --success: #4ADE80;
+  --error: #F87171;
+  --neutral: #9CA3AF;
+  --border: rgba(255, 255, 255, 0.1);
+  --focus-ring: #7C9EFF;
+  
+  /* Extended semantic tokens for theme consistency */
+  --surface: rgba(255, 255, 255, 0.03);
+  --surface-muted: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(255, 255, 255, 0.08);
+  --surface-glass: rgba(255, 255, 255, 0.1);
+  --surface-hover: rgba(255, 255, 255, 0.12);
+  --surface-active: rgba(255, 255, 255, 0.15);
+  
+  --border-muted: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  
+  --text-contrast: #000000;
+  --text-inverse: #FFFFFF;
+  --text-on-primary: #000000;
+  
+  --tag-active-bg: var(--primary);
+  --tag-active-text: #000000;
+  --tag-muted-bg: rgba(255, 255, 255, 0.05);
+  --tag-muted-text: var(--muted);
+  --tag-muted-border: rgba(255, 255, 255, 0.1);
+  
+  --card-bg: rgba(17, 22, 29, 0.8);
+  --card-border: rgba(255, 255, 255, 0.1);
+  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.1);
+  --input-border-focus: var(--primary);
+  
+  --overlay-bg: rgba(0, 0, 0, 0.6);
+  --modal-bg: #11161D;
+  
+  --badge-positive-bg: rgba(74, 222, 128, 0.15);
+  --badge-positive-text: #4ADE80;
+  --badge-negative-bg: rgba(248, 113, 113, 0.15);
+  --badge-negative-text: #F87171;
+  --badge-neutral-bg: rgba(156, 163, 175, 0.15);
+  --badge-neutral-text: #9CA3AF;
+  
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-track: rgba(255, 255, 255, 0.05);
+  
+  /* Translucent semantic colors for backgrounds and soft emphasis */
+  --primary-soft: rgba(124, 158, 255, 0.2);
+  --primary-light: rgba(124, 158, 255, 0.1);
+  --success-soft: rgba(74, 222, 128, 0.2);
+  --success-light: rgba(74, 222, 128, 0.1);
+  --error-soft: rgba(248, 113, 113, 0.2);
+  --error-light: rgba(248, 113, 113, 0.1);
+  --warning-soft: rgba(250, 204, 21, 0.2);
+  --warning-light: rgba(250, 204, 21, 0.1);
+  --accent-soft: rgba(0, 224, 164, 0.2);
+  --accent-light: rgba(0, 224, 164, 0.1);
+  --muted-soft: rgba(156, 163, 175, 0.2);
+  --muted-light: rgba(156, 163, 175, 0.1);
+}
+
+[data-theme="light"] {
+  --bg: #FFFFFF;
+  --panel: #F5F7FA;
+  --text: #0B0F14;
+  --muted: #5C6F82;
+  --primary: #4A69D4;
+  --primary-contrast: #FFFFFF;
+  --accent: #00B087;
+  --danger: #E84545;
+  --warning: #B45309;
+  --warning-dark: #92400E;
+  --success: #15803D;
+  --error: #B91C1C;
+  --neutral: #4B5563;
+  --border: #D1D5DB;
+  --focus-ring: #2563EB;
+  
+  /* Extended semantic tokens for light theme */
+  --surface: rgba(0, 0, 0, 0.02);
+  --surface-muted: rgba(0, 0, 0, 0.04);
+  --surface-strong: rgba(0, 0, 0, 0.06);
+  --surface-glass: rgba(0, 0, 0, 0.08);
+  --surface-hover: rgba(0, 0, 0, 0.08);
+  --surface-active: rgba(0, 0, 0, 0.12);
+  
+  --border-muted: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.15);
+  
+  --text-contrast: #FFFFFF;
+  --text-inverse: #0B0F14;
+  --text-on-primary: #FFFFFF;
+  
+  --tag-active-bg: var(--primary);
+  --tag-active-text: #FFFFFF;
+  --tag-muted-bg: rgba(0, 0, 0, 0.04);
+  --tag-muted-text: var(--muted);
+  --tag-muted-border: rgba(0, 0, 0, 0.1);
+  
+  --card-bg: #FFFFFF;
+  --card-border: rgba(0, 0, 0, 0.1);
+  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  
+  --input-bg: rgba(0, 0, 0, 0.03);
+  --input-border: rgba(0, 0, 0, 0.15);
+  --input-border-focus: var(--primary);
+  
+  --overlay-bg: rgba(0, 0, 0, 0.4);
+  --modal-bg: #FFFFFF;
+  
+  --badge-positive-bg: rgba(21, 128, 61, 0.12);
+  --badge-positive-text: #15803D;
+  --badge-negative-bg: rgba(185, 28, 28, 0.12);
+  --badge-negative-text: #B91C1C;
+  --badge-neutral-bg: rgba(75, 85, 99, 0.12);
+  --badge-neutral-text: #4B5563;
+  
+  --scrollbar-thumb: rgba(0, 0, 0, 0.2);
+  --scrollbar-track: rgba(0, 0, 0, 0.05);
+  
+  /* Translucent semantic colors for backgrounds and soft emphasis */
+  --primary-soft: rgba(74, 105, 212, 0.2);
+  --primary-light: rgba(74, 105, 212, 0.1);
+  --success-soft: rgba(21, 128, 61, 0.2);
+  --success-light: rgba(21, 128, 61, 0.1);
+  --error-soft: rgba(185, 28, 28, 0.2);
+  --error-light: rgba(185, 28, 28, 0.1);
+  --warning-soft: rgba(180, 83, 9, 0.2);
+  --warning-light: rgba(180, 83, 9, 0.1);
+  --accent-soft: rgba(0, 176, 135, 0.2);
+  --accent-light: rgba(0, 176, 135, 0.1);
+  --muted-soft: rgba(75, 85, 99, 0.2);
+  --muted-light: rgba(75, 85, 99, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  color: var(--text);
+  background: var(--bg);
+  font-feature-settings: 'rlig' 1, 'calt' 1;
+}
+
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-space-grotesk);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

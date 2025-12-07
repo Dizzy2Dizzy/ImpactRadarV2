@@ -1,0 +1,318 @@
+You are a senior QA engineer, performance engineer, and security reviewer.
+This repo is Release Radar, an event-driven stock intelligence platform (Next.js dashboard + Python backend + scanners + PostgreSQL).
+
+Your job:
+Exhaustively test EVERY feature, detect any incorrect or misleading behavior (especially financial/event data), and optimize performance everywhere you safely can.
+Treat this as a pre-beta hardening pass.
+
+⸻
+
+Global rules (very important)
+	1.	Real data only for “Primary” events
+	•	Use real SEC, FDA, company IR and other official sources wherever possible.
+	•	Do NOT invent, simulate, or template primary events (e.g. fake 8-K, 10-Q, FDA approval).
+	•	If you must create stub/mock events for tests:
+	•	Mark them clearly (e.g. is_mock = true).
+	•	Keep them in a test DB or test fixtures only.
+	•	Never show them in the live UI or production DB paths.
+	2.	Accuracy and safety > features
+	•	If any feature cannot be guaranteed to show real, correctly sourced information, either:
+	•	Gate it behind an explicit “Experimental / Demo” flag, or
+	•	Temporarily disable it and document why.
+	•	Do not allow features that serve clearly wrong or unverifiable financial/event information to regular users.
+	3.	No real external side effects
+	•	Do not send real emails, SMS, or real Stripe/crypto charges.
+	•	Use test keys/sandboxes or stub clients for SMTP, Twilio, Stripe, X API, etc.
+	•	If live keys are present, switch to test keys for QA or guard all calls behind a test mode.
+	4.	Do not over-claim
+	•	Ensure all marketing / docs / security / ML claims match the actual implementation.
+	•	If something is aspirational or partially implemented, label it as such in comments and report.
+
+⸻
+
+Step 1 – Discover and map ALL features
+	1.	Scan the entire repo and build a complete feature inventory:
+	•	Auth:
+	•	Signup, login, logout
+	•	Email verification, SMS verification
+	•	Password hashing, session handling
+	•	Account:
+	•	Profile/settings
+	•	Plan/tier selection
+	•	Watchlists, notification preferences
+	•	Event system:
+	•	SEC/FDA/company scanners
+	•	Event ingestion & normalization
+	•	Event list, filters, search, detail views
+	•	Source links and categories (Primary/Secondary, event types)
+	•	Impact scoring:
+	•	Base impact model
+	•	AI/“Echo” or learning model
+	•	Confidence, direction, rationale text
+	•	Learning module / Market Echo:
+	•	Logging realized outcomes
+	•	Model training and blending with base scores
+	•	Portfolio / Earnings / Projector:
+	•	Portfolio input and tracking
+	•	Live prices (yfinance or equivalent)
+	•	Earnings impact view
+	•	Projector chart with event overlays and indicators
+	•	AI features:
+	•	RadarQuant AI or any assistant
+	•	Any summarization/analysis endpoints
+	•	Social/X.com features (if present):
+	•	X/Twitter sentiment ingestion
+	•	NLP classification
+	•	Linking sentiment to events/tickers
+	•	Pricing & billing:
+	•	Plan tiers
+	•	Stripe/crypto integration (test mode)
+	•	Admin/backoffice:
+	•	Scanner status
+	•	Data quality tools
+	•	Any internal dashboards
+	•	Background jobs:
+	•	Scanners
+	•	Nightly outcome logging
+	•	Model retraining
+	2.	Create or update a FEATURE_MAP.md file that lists for each feature:
+	•	Name
+	•	Main routes/components (Next.js pages/components)
+	•	Backend modules/services it depends on
+	•	DB tables used
+
+Use this as the checklist so you miss nothing.
+
+⸻
+
+Step 2 – Automated tests & static checks
+
+2.1 Backend (Python)
+	1.	Set up or extend a tests/ suite (pytest preferred). Add tests for:
+	•	Event ingestion & normalization
+	•	Given sample SEC/FDA/company payloads (use recorded JSON or HTML snippets), verify:
+	•	Correct ticker, company, date
+	•	Correct form type/event type
+	•	Correct source_url (proper SEC/FDA/company domain)
+	•	Impact scoring
+	•	Given synthetic groups of returns, verify:
+	•	mu and sigma computed correctly
+	•	p_move, p_up, p_down match analytical expectations for simple toy distributions
+	•	impact_score ∈ [0,100], confidence ∈ [0,100]
+	•	Test fallback behavior when:
+	•	No prior data
+	•	Very small sample size
+	•	Zero or near-zero sigma
+	•	Learning / Echo module
+	•	Test outcome logging:
+	•	For a given event with synthetic prices, check correct abnormal return is stored.
+	•	Test model blending:
+	•	AI adjustments are capped (e.g. cannot change score by more than allowed delta/weight).
+	•	When confidence is low, the adjustment is minimal or zero.
+	•	Auth
+	•	Password hashing/verification (ensure bcrypt/argon2, not plain SHA-256).
+	•	Email/SMS code generation, expiry, and verification behavior.
+	•	Login/logout flows at the backend level.
+	•	Scanners
+	•	For each scanner, tests that:
+	•	No duplicate events are inserted for same accession ID/source.
+	•	Unique constraint/upsert logic works.
+	2.	Run tests and fix failing cases. Add test commands to README if missing.
+
+2.2 Frontend (Next.js)
+	1.	Add or extend tests with Playwright / Cypress / Testing Library:
+	•	Smoke tests:
+	•	All main routes render without throwing.
+	•	UX tests:
+	•	Events page:
+	•	Filters and search work.
+	•	Clicking an event opens a detail view.
+	•	Projector:
+	•	Changing ticker/interval/indicators updates chart without errors.
+	•	Event markers show and open correct event detail.
+	•	Auth flows:
+	•	Forms validate input and display errors.
+	•	Pricing:
+	•	Correct plan cards show.
+	•	Clicking plan call-to-action triggers appropriate front-end behavior (without real charge).
+	2.	Run tsc, eslint, and fix type and lint errors where feasible.
+
+⸻
+
+Step 3 – Manual end-to-end testing (as a human user)
+
+Run the app in Replit, open the web UI, and manually drive:
+	1.	Auth & Account
+	•	Create a new user, complete email verification flow (using test SMTP).
+	•	Login, logout, try invalid passwords.
+	•	Update settings where available.
+	•	Ensure no sensitive info is exposed in responses or console logs.
+	2.	Watchlist & Portfolio
+	•	Add/remove tickers to watchlist.
+	•	Input portfolio holdings.
+	•	Verify:
+	•	Watchlist/portfolio affect which events are highlighted.
+	•	Projector defaults to something sensible (e.g., watchlist tickers).
+	3.	Events & Scanners
+	•	Run each scanner (SEC, FDA, company releases) in a controlled environment:
+	•	Confirm new events appear.
+	•	Check:
+	•	Ticker, date, company.
+	•	Event category and tags.
+	•	Source link actually opens the correct official page.
+	•	Confirm no obvious duplicates for same filing/accession ID.
+	4.	Impact & Echo model
+	•	Inspect a mix of events (earnings, 8-K, FDA, guidance).
+	•	Verify:
+	•	Base impact score matches expectations for that event type.
+	•	AI-adjusted score is close to base (nudging, not random jumping).
+	•	Confidence is low where historical data is sparse.
+	•	Confirm the UI clearly shows:
+	•	Base score vs AI-adjusted score.
+	•	Any “Experimental / Beta” labels where appropriate.
+	5.	Projector (chart)
+	•	Load several tickers.
+	•	Change intervals, indicator toggles, event overlays.
+	•	Verify:
+	•	Event markers align to correct dates,
+	•	Clicking a marker opens the correct event.
+	•	Performance is acceptable (no freezes).
+	6.	AI features (RadarQuant, etc.)
+	•	Ask realistic questions:
+	•	About upcoming events,
+	•	About a specific recent 8-K or FDA decision.
+	•	Check that AI:
+	•	Refers to actual events in DB and links to them.
+	•	Does not invent non-existent filings/approvals.
+	•	Ensure graceful handling when AI backend is down or missing API key.
+	7.	Pricing & Plans
+	•	Visit Pricing/Plans pages.
+	•	Select different plans (without real charges).
+	•	Confirm:
+	•	Plan changes affect feature access (if implemented).
+	•	UI states match backend state.
+	8.	X.com / Sentiment (if present)
+	•	Verify:
+	•	No HTML scraping; only API/stub usage.
+	•	Posts are shown with clear attribution, language, and ticker mapping.
+	•	These are labeled as user-generated content, not facts.
+
+Log everything that looks wrong, confusing, or unsafe; fix and re-test.
+
+⸻
+
+Step 4 – Detect and prevent “false information”
+
+Focus especially on event/impact data.
+	1.	Source verification helper
+	•	Implement a script or admin tool that:
+	•	Samples events from each source (SEC/FDA/company).
+	•	For each:
+	•	Verify domain of source_url is correct (e.g., sec.gov, fda.gov, official IR).
+	•	Cross-check a few key fields (form type, date, maybe title pattern) from the source.
+	•	Flag and log discrepancies.
+	•	If systemic issues appear (e.g. mismatched tickers or dates):
+	•	Mark those events as invalid or hide them.
+	•	Do not show them to regular users until the pipeline is fixed.
+	2.	Deduplication
+	•	Ensure unique constraints for events (e.g., source_system + accession_id + ticker).
+	•	Fix scanner logic so re-scans upsert, not blindly insert.
+	•	Write a small migration/cleanup to merge or remove existing duplicates.
+	3.	Impact sanity checks
+	•	Build a script that:
+	•	Replays historical events and compares:
+	•	predicted impact vs realized abnormal move,
+	•	Highlights:
+	•	huge divergences,
+	•	directions that are systematically wrong.
+	•	If certain event types look completely mis-modeled, consider:
+	•	Reducing their visible confidence,
+	•	Marking them “experimental,”
+	•	Or temporarily hiding their impact scores.
+	4.	AI constraints
+	•	Inspect AI prompts/system messages:
+	•	Ensure they clearly instruct the model:
+	•	to only summarize from DB events + official sources,
+	•	to not invent primary events or filings.
+	•	Where possible, post-process AI output to:
+	•	Ignore or redact statements about events that don’t exist in the DB.
+
+⸻
+
+Step 5 – Performance optimization (without breaking correctness)
+
+After tests pass and behavior is stable, focus on speed:
+
+5.1 Next.js frontend
+	•	Analyze bundle size and route performance:
+	•	Use Next.js analyzer to find heavy modules.
+	•	Optimize:
+	•	Code-split heavy components (charts, AI panels, large tables) via dynamic imports.
+	•	Only load chart libraries on pages/components that need them.
+	•	Paginate large event lists; avoid sending thousands of rows in one response.
+	•	Cache static/rarely changed data (e.g., marketing copy) at build time / edge where feasible.
+
+5.2 Backend (Python + DB)
+	•	Profile hot paths:
+	•	Event list queries,
+	•	Scanner queries,
+	•	Impact/Echo queries.
+	•	Add appropriate indexes on:
+	•	ticker, event_date, event_type, impact_score, watchlist_id.
+	•	Cache:
+	•	Popular event lists and aggregates.
+	•	Group priors/impact model parameters.
+	•	Ensure scanners:
+	•	Run as batch/background jobs, not on request.
+	•	Do not block user-facing endpoints.
+
+5.3 API level
+	•	Ensure API routes:
+	•	Return minimal necessary data (avoid huge JSON payloads).
+	•	Support pagination and filtering.
+	•	Are idempotent and handle errors gracefully.
+	•	Add simple rate limiting where sensible to prevent abuse.
+
+5.4 Perceived performance
+	•	Add skeleton loaders/spinners for:
+	•	Events list,
+	•	Projector,
+	•	AI responses.
+	•	Avoid blocking UI while background jobs run.
+
+⸻
+
+Step 6 – Final HARDENING_REPORT
+
+Create a HARDENING_REPORT.md at the repo root summarizing:
+	1.	Coverage
+	•	List all features from FEATURE_MAP.md.
+	•	Indicate which have:
+	•	automated tests,
+	•	manual tests,
+	•	pending tests (and why).
+	2.	Bugs & fixes
+	•	Group by severity:
+	•	Critical (fixed or feature disabled),
+	•	High,
+	•	Medium/Low.
+	•	For each: brief description + file(s) changed.
+	3.	False-information risks
+	•	Any areas where data might still be:
+	•	incomplete,
+	•	delayed,
+	•	or too noisy to rely on.
+	•	How you mitigated them (labels, hiding, guardrails).
+	4.	Performance improvements
+	•	Before/after comparisons where possible (page load times, heavy endpoints).
+	•	Key optimizations applied.
+	5.	Remaining limitations / blockers
+	•	Features that should stay:
+	•	disabled,
+	•	marked as experimental,
+	•	or behind feature flags.
+	•	Any dependencies (e.g., external audits, more data) needed before calling this “production-ready”.
+
+Do not call the system fully production-grade if known critical issues remain. Instead, clearly list what’s left and how someone should approach using it (beta, limited release, etc.).
+
+Implement all of this carefully and conservatively; correctness, safety, and data integrity come first, then performance and polish.
